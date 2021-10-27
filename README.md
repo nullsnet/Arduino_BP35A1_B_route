@@ -14,12 +14,12 @@ BP35A1 bp35a1 = BP35A1("B_ROUTE_ID","B_ROUTE_PASSWORD");
 
 void setup()
 {
-    wisun.initialize();
+    bp35a1.initialize();
 }
 
 void loop()
 {
-    int power = wisun.getInstantaneousPower();
+    int power = bp35a1.getInstantaneousPower();
     Serial.println(power);
 }
 ```
