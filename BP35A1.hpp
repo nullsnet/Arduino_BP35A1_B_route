@@ -33,6 +33,7 @@ private:
     "SKSETRBID",
     "SKJOIN",
     "SKSCAN",
+    "SKRESET",
   };
 
   enum SKCmd {
@@ -44,6 +45,7 @@ private:
     setSKStackID, // 指定されたIDから各 Route-B ID を生成して設定します,
     joinSKStack, // 指定したIPADDRに対してPaC（PANA 認証クライアント）としてPANA接続シーケンスを開始します,
     scanSKStack, // 指定したチャンネルに対してアクティブスキャンまたは EDスキャンを実行します,
+    resetSKStack,
   };
 
   enum class SkStatus {

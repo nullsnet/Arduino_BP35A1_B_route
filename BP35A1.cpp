@@ -187,7 +187,10 @@ bool BP35A1::configuration(){
   case InitializeStatus::uninitialized:
   default:
     {
+      this->execCommand(SKCmd::resetSKStack);
+      this->discardBuffer();
       this->execCommand(SKCmd::disableEcho);
+      this->discardBuffer();
       this->execCommand(SKCmd::getSKStackVersion);
       std::vector<String> response;
       String terminator = "EVER";
@@ -198,7 +201,6 @@ bool BP35A1::configuration(){
     }
     break;
   case InitializeStatus::getSkVer:
-    this->execCommand(SKCmd::terminateSKStack);
     this->execCommand(SKCmd::setSKStackPassword,&this->WPassword);
     this->initializeStatus = this->waitResponse() ? InitializeStatus::setSkSetpwd : InitializeStatus::uninitialized;
     break;
@@ -234,7 +236,7 @@ bool BP35A1::waitResponse(
   while(timeoutms == 0||timeout < timeoutms){
     while(this->available()){
       String line = this->readStringUntil('\n');
-      printDebugline("<< " + line);
+      this->printDebugline("<< " + line);
       if(response != nullptr){
         response->push_back(line);
       }
@@ -251,6 +253,7 @@ bool BP35A1::waitResponse(
         }else{
           if(line.indexOf("FAIL ER") > -1){
             this->printDebugline("Command execute error");
+            this->discardBuffer();
             return false;
           }else if(line.indexOf("OK") > -1){
             return true;
