@@ -161,15 +161,16 @@ bool BP35A1::scan(){
       String receiveBeacon = Event(Event::EventNum::ReceiveBeacon).toString();
       String completeActiveScan = Event(Event::EventNum::CompleteActiveScan).toString();
       while(1){
-        if(this->waitResponse(&response,0,&terminator,scanRetryCounter * 1000)){
+        if(this->waitResponse(&response,0,&terminator,scanRetryCounter * 10000)){
           if(response[0].indexOf(receiveBeacon) > -1){
             // ビーコン受信の場合は次へ
             this->CommunicationParameter.destIpv6Address = response[0].substring(response[0].indexOf(receiveBeacon) + 9);
             this->scanStatus = ScanStatus::checkScanResult;
             break;
           }else{
-            // ビーコン受信以外(スキャン完了)の場合はリトライ
+            // ビーコン受信以外(スキャン完了)の場合は読み込み継続
             scanRetryCounter++;
+            this->scanStatus = ScanStatus::uninitialized;
             break;
           }
         }
@@ -324,27 +325,25 @@ bool BP35A1::parseScanResult(){
 
 std::vector<byte> BP35A1::getData(const Echonet::SmartMeterClass dataType,const uint32_t delayms,const uint32_t timeoutms){
   std::vector<byte> payload;
-  if(!this->initializeFailed){
-    // send request
-    skSendTo udpData = skSendTo(dataType,this->CommunicationParameter.ipv6Address);
-    this->print(udpData.getSendString());
-    this->printDebug(">> " + udpData.getSendString());
+  // send request
+  skSendTo udpData = skSendTo(dataType,this->CommunicationParameter.ipv6Address);
+  this->print(udpData.getSendString());
+  this->printDebug(">> " + udpData.getSendString());
 
-    this->write((uint8_t*)&udpData.echonet.data,sizeof(Echonet::EchonetData));
-    this->writeDebug((uint8_t*)&udpData.echonet.data,sizeof(Echonet::EchonetData));
+  this->write((uint8_t*)&udpData.echonet.data,sizeof(Echonet::EchonetData));
+  this->writeDebug((uint8_t*)&udpData.echonet.data,sizeof(Echonet::EchonetData));
 
-    this->print("\r\n");
-    this->printDebug("\r\n");
-    // send check
-    String terminator = Event(Event::EventNum::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address + EventStatus(EventStatus::EventStatusNum::SuccessUdpSend).toString();
-    if(this->waitResponse(nullptr,0,&terminator,timeoutms,delayms)){
-      std::vector<String> response;
-      terminator = "ERXUDP " + this->CommunicationParameter.ipv6Address;
-      if(this->waitResponse(&response,0,&terminator,timeoutms,delayms)){
-        // receive response
-        const ErxUdp erxUdp = ErxUdp(response.back());
-        std::copy(erxUdp.echonet.payload.begin(),erxUdp.echonet.payload.end(),std::back_inserter(payload));
-      }
+  this->print("\r\n");
+  this->printDebug("\r\n");
+  // send check
+  String terminator = Event(Event::EventNum::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address + EventStatus(EventStatus::EventStatusNum::SuccessUdpSend).toString();
+  if(this->waitResponse(nullptr,0,&terminator,timeoutms,delayms)){
+    std::vector<String> response;
+    terminator = "ERXUDP " + this->CommunicationParameter.ipv6Address;
+    if(this->waitResponse(&response,0,&terminator,timeoutms,delayms)){
+      // receive response
+      const ErxUdp erxUdp = ErxUdp(response.back());
+      std::copy(erxUdp.echonet.payload.begin(),erxUdp.echonet.payload.end(),std::back_inserter(payload));
     }
   }
   return payload;
