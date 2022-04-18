@@ -3,7 +3,7 @@
 bool BP35A1::setRegister(const VirtualRegister::VirtualRegisterNum registerNum,const String &arg){
   char c[32];
   snprintf(c,sizeof(c),"SKSREG %s %s",VirtualRegister(registerNum).toString().c_str(),arg.c_str());
-  return this->execCommand(c)>0 && this->waitResponse() ? true : false;
+  return this->execCommand(c)>0 && this->returnOk() ? true : false;
 }
 
 void BP35A1::printDebugline(const String s){
@@ -71,6 +71,7 @@ bool BP35A1::initialize(){
     if(this->initializeFailed){
       break;
     }
+    delay(500);
   }
   return false;
 }
@@ -99,7 +100,7 @@ bool BP35A1::connect(){
     break;
   case ConnectStatus::setComunicationParam:
     this->execCommand(SKCmd::joinSKStack,&this->CommunicationParameter.ipv6Address);
-    if(this->waitResponse()){
+    if(this->returnOk()){
       this->connectStatus = ConnectStatus::waitSuccessPANA;
     }else{
       this->connectStatus = ConnectStatus::uninitialized;
@@ -148,7 +149,7 @@ bool BP35A1::scan(){
       snprintf(s, sizeof(s), "%d %X %d",(unsigned char)this->scanMode,this->scanChannelMask,scanRetryCounter + 3);
       String arg = String(s);
       this->execCommand(SKCmd::scanSKStack,&arg);
-      if(this->waitResponse()){
+      if(this->returnOk()){
         this->scanStatus = ScanStatus::waitBeacon;
       }
     }
@@ -157,16 +158,22 @@ bool BP35A1::scan(){
     {
       std::vector<String> response;
       String terminator = "EVENT 2";
-      if(this->waitResponse(&response,0,&terminator,scanRetryCounter * 10000)){
-        String receiveBeacon = Event(Event::EventNum::ReceiveBeacon).toString();
-        if(response[0].indexOf(receiveBeacon) > -1){
-          this->CommunicationParameter.destIpv6Address = response[0].substring(response[0].indexOf(receiveBeacon) + 9);
-          this->scanStatus = ScanStatus::checkScanResult;
-          break;
+      String receiveBeacon = Event(Event::EventNum::ReceiveBeacon).toString();
+      String completeActiveScan = Event(Event::EventNum::CompleteActiveScan).toString();
+      while(1){
+        if(this->waitResponse(&response,0,&terminator,scanRetryCounter * 1000)){
+          if(response[0].indexOf(receiveBeacon) > -1){
+            // ビーコン受信の場合は次へ
+            this->CommunicationParameter.destIpv6Address = response[0].substring(response[0].indexOf(receiveBeacon) + 9);
+            this->scanStatus = ScanStatus::checkScanResult;
+            break;
+          }else{
+            // ビーコン受信以外(スキャン完了)の場合はリトライ
+            scanRetryCounter++;
+            break;
+          }
         }
       }
-      scanRetryCounter++;
-      this->scanStatus = ScanStatus::uninitialized;
     }
     break;
   case ScanStatus::checkScanResult:
@@ -188,9 +195,7 @@ bool BP35A1::configuration(){
   default:
     {
       this->execCommand(SKCmd::resetSKStack);
-      this->discardBuffer();
       this->execCommand(SKCmd::disableEcho);
-      this->discardBuffer();
       this->execCommand(SKCmd::getSKStackVersion);
       std::vector<String> response;
       String terminator = "EVER";
@@ -202,11 +207,11 @@ bool BP35A1::configuration(){
     break;
   case InitializeStatus::getSkVer:
     this->execCommand(SKCmd::setSKStackPassword,&this->WPassword);
-    this->initializeStatus = this->waitResponse() ? InitializeStatus::setSkSetpwd : InitializeStatus::uninitialized;
+    this->initializeStatus = this->returnOk() ? InitializeStatus::setSkSetpwd : InitializeStatus::uninitialized;
     break;
   case InitializeStatus::setSkSetpwd:
     this->execCommand(SKCmd::setSKStackID,&this->WID);
-    if(this->waitResponse()){
+    if(this->returnOk()){
       this->initializeStatus = InitializeStatus::initialized;
       return true;
     }else{
@@ -224,6 +229,24 @@ void BP35A1::discardBuffer(const uint32_t delayms){
   }
 }
 
+bool BP35A1::returnOk(
+  const uint32_t timeoutms,
+  const uint32_t delayms
+){
+  const String terminator = "OK";
+  return this->waitResponse(nullptr,0,&terminator,timeoutms,delayms);
+}
+
+/**
+ * @brief レスポンス待機
+ * @param response 文字列を格納用ベクタ
+ * @param lines レスポンス行数上限
+ * @param terminator レスポンス待機終了文字
+ * @param timeoutms レスポンス待機タイムアウト
+ * @param delayms 待機時間
+ * @return true
+ * @return false
+ */
 bool BP35A1::waitResponse(
   std::vector<String> * const response,
   const uint32_t lines,
@@ -235,22 +258,27 @@ bool BP35A1::waitResponse(
   uint32_t linecounter = 0;
   while(timeoutms == 0||timeout < timeoutms){
     while(this->available()){
+      // 1行読み込み
       String line = this->readStringUntil('\n');
       this->printDebugline("<< " + line);
+      // response指定時は結果を格納
       if(response != nullptr){
         response->push_back(line);
       }
       linecounter++;
+      // 行数指定時は行数チェック
       if(lines != 0){
         if(linecounter >= lines){
           return true;
         }
       }else{
+        // 終端文字指定時は文字存在チェック
         if(terminator != nullptr){
           if(line.indexOf(*terminator) > -1){
             return true;
           }
         }else{
+          // 何も指定がない場合はFAIL / OKチェック
           if(line.indexOf("FAIL ER") > -1){
             this->printDebugline("Command execute error");
             this->discardBuffer();
@@ -270,7 +298,7 @@ bool BP35A1::waitResponse(
 
 bool BP35A1::parseScanResult(){
   std::vector<String> response;
-  String terminator = "LQI";
+  String terminator = "PairID";
   if(waitResponse(&response,0,&terminator)){
     for(String line : response){
       if(line.indexOf("Channel:") > -1){
@@ -320,26 +348,4 @@ std::vector<byte> BP35A1::getData(const Echonet::SmartMeterClass dataType,const 
     }
   }
   return payload;
-}
-
-int32_t BP35A1::getInstantaneousPower(uint32_t delayms,uint32_t timeoutms){
-
-  std::vector<byte> payload = this->getData(Echonet::SmartMeterClass::InstantPower);
-
-  if(payload.size() == sizeof(int32_t)){
-    return *(int32_t *)payload.data();
-  }else{
-    return -1;
-  }
-}
-
-std::vector<signed short> BP35A1::getInstantaneousCurrent(uint32_t delayms,uint32_t timeoutms){
-  std::vector<signed short> current;
-  std::vector<byte> payload = this->getData(Echonet::SmartMeterClass::InstantCurrent);
-
-  if(payload.size() == sizeof(signed short)*2){
-    current.push_back(((signed short *)payload.data())[0]);
-    current.push_back(((signed short *)payload.data())[2]);
-  }
-  return current;
 }

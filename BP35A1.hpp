@@ -221,6 +221,7 @@ private:
   bool setRegister(const VirtualRegister::VirtualRegisterNum registerNum,const String &arg);
   size_t execCommand(const SKCmd skCmdNum,const String * const arg = nullptr);
   size_t execCommand(const String &s);
+  bool returnOk(const uint32_t timeoutms = 5000,const uint32_t delayms = 100);
   bool waitResponse(std::vector<String> * const response = nullptr,const uint32_t lines = 0,const String * const terminator = nullptr,const uint32_t timeoutms = 5000,const uint32_t delayms = 100);
   void discardBuffer(uint32_t delayms = 1000);
   bool parseScanResult();
@@ -228,7 +229,6 @@ private:
   bool scan();
   bool configuration();
   void printParam();
-  std::vector<byte> getData(const Echonet::SmartMeterClass dataType,const uint32_t delayms = 100,const uint32_t timeoutms = 3000);
   void printDebugline(const String s);
   void printDebug(const String s);
   void writeDebug(const uint8_t *c,const size_t size);
@@ -241,12 +241,11 @@ public:
   }scanMode = ScanMode::ActiveScanWithIE;
   unsigned int scanChannelMask = 0xFFFFFFFF;
 
+  std::vector<byte> getData(const Echonet::SmartMeterClass dataType,const uint32_t delayms = 100,const uint32_t timeoutms = 3000);
   BP35A1(String ID,String Password,int uart_nr = 1);
   bool debugPrint = false;
   unsigned int scanRetryCount = 9;
   void setDebugPrint(HardwareSerial *output);
   bool initialize();
-  int32_t getInstantaneousPower(uint32_t delayms = 100,uint32_t timeoutms = 3000);
-  std::vector<signed short> getInstantaneousCurrent(uint32_t delayms = 100,uint32_t timeoutms = 3000);
 };
 #endif // __BP35A1_HPP
