@@ -336,14 +336,18 @@ std::vector<byte> BP35A1::getData(const Echonet::SmartMeterClass dataType,const 
   this->print("\r\n");
   this->printDebug("\r\n");
   // send check
-  String terminator = Event(Event::EventNum::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address + EventStatus(EventStatus::EventStatusNum::SuccessUdpSend).toString();
-  if(this->waitResponse(nullptr,0,&terminator,timeoutms,delayms)){
-    std::vector<String> response;
-    terminator = "ERXUDP " + this->CommunicationParameter.ipv6Address;
-    if(this->waitResponse(&response,0,&terminator,timeoutms,delayms)){
-      // receive response
-      const ErxUdp erxUdp = ErxUdp(response.back());
-      std::copy(erxUdp.echonet.payload.begin(),erxUdp.echonet.payload.end(),std::back_inserter(payload));
+  std::vector<String> retval;
+  String terminator = Event(Event::EventNum::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address;
+  if(this->waitResponse(&retval,0,&terminator,timeoutms,delayms)){
+    if(retval.back().indexOf(terminator + EventStatus(EventStatus::EventStatusNum::SuccessUdpSend).toString()) > -1){
+      // UDP送信成功
+      std::vector<String> response;
+      terminator = "ERXUDP " + this->CommunicationParameter.ipv6Address;
+      if(this->waitResponse(&response,0,&terminator,timeoutms,delayms)){
+        // receive response
+        const ErxUdp erxUdp = ErxUdp(response.back());
+        std::copy(erxUdp.echonet.payload.begin(),erxUdp.echonet.payload.end(),std::back_inserter(payload));
+      }
     }
   }
   return payload;
