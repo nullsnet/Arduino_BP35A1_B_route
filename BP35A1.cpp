@@ -323,8 +323,7 @@ bool BP35A1::parseScanResult(){
   }
 }
 
-std::vector<byte> BP35A1::getData(const Echonet::SmartMeterClass dataType,const uint32_t delayms,const uint32_t timeoutms){
-  std::vector<byte> payload;
+BP35A1::ErxUdp BP35A1::getUdpData(const Echonet::SmartMeterClass dataType,const uint32_t delayms,const uint32_t timeoutms){
   // send request
   skSendTo udpData = skSendTo(dataType,this->CommunicationParameter.ipv6Address);
   this->print(udpData.getSendString());
@@ -345,10 +344,9 @@ std::vector<byte> BP35A1::getData(const Echonet::SmartMeterClass dataType,const 
       terminator = "ERXUDP " + this->CommunicationParameter.ipv6Address;
       if(this->waitResponse(&response,0,&terminator,timeoutms,delayms)){
         // receive response
-        const ErxUdp erxUdp = ErxUdp(response.back());
-        std::copy(erxUdp.echonet.payload.begin(),erxUdp.echonet.payload.end(),std::back_inserter(payload));
+        return ErxUdp(response.back());
       }
     }
   }
-  return payload;
+  return ErxUdp();
 }
