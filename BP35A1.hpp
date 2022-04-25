@@ -1,6 +1,7 @@
 #ifndef __BP35A1_HPP
 #define __BP35A1_HPP
 
+#include "esp32-hal-log.h"
 #include <HardwareSerial.h>
 #include <vector>
 #include "Echonet.hpp"
@@ -9,7 +10,6 @@ class BP35A1:public HardwareSerial
 {
 private:
   String eVer;
-  HardwareSerial *debugPrintOutput = &Serial;
   String WPassword;
   String WID;
   bool initializeFailed = false;
@@ -152,20 +152,22 @@ private:
   class skSendTo
   {
   public:
-    uint8_t udpHandle = 0x01;
-    String destIpv6;
-    uint16_t destPort = 0x0E1A;
-    uint8_t secured = 0x01;
-    uint16_t length = sizeof(Echonet::EchonetData);
+    struct{
+      uint8_t udpHandle = 0x01;
+      String destIpv6;
+      uint16_t destPort = 0x0E1A;
+      uint8_t secured = 0x01;
+      uint16_t length = sizeof(Echonet::EchonetData);
+    }header;
     Echonet echonet;
     skSendTo();
     skSendTo(Echonet::SmartMeterClass property,String dest){
-      this->destIpv6 = dest;
+      this->header.destIpv6 = dest;
       this->echonet.data.EDATA.property = property;
     };
     String getSendString(){
       char sendData[256];
-      snprintf(sendData,sizeof(sendData),"SKSENDTO %d %s %04X %d %04X ",this->udpHandle,this->destIpv6.c_str(),this->destPort,this->secured,this->length);
+      snprintf(sendData,sizeof(sendData),"SKSENDTO %d %s %04X %d %04X ",this->header.udpHandle,this->header.destIpv6.c_str(),this->header.destPort,this->header.secured,this->header.length);
       return String(sendData);
     };
   };
@@ -181,10 +183,6 @@ private:
   bool scan();
   bool configuration();
   void printParam();
-  void printDebugline(const String s);
-  void printDebug(const String s);
-  void writeDebug(const uint8_t *c,const size_t size);
-
 public:
   class ErxUdp
   {
@@ -244,9 +242,7 @@ public:
   ErxUdp getUdpData(const Echonet::SmartMeterClass dataType,const uint32_t delayms = 100,const uint32_t timeoutms = 3000);
   std::vector<byte> getPayload(const Echonet::SmartMeterClass dataType,const uint32_t delayms = 100,const uint32_t timeoutms = 3000);
   BP35A1(String ID,String Password,int uart_nr = 1);
-  bool debugPrint = false;
   unsigned int scanRetryCount = 9;
-  void setDebugPrint(HardwareSerial *output);
   bool initialize();
 };
 #endif // __BP35A1_HPP

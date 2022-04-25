@@ -6,29 +6,9 @@ bool BP35A1::setRegister(const VirtualRegister::VirtualRegisterNum registerNum,c
   return this->execCommand(c)>0 && this->returnOk() ? true : false;
 }
 
-void BP35A1::printDebugline(const String s){
-  if(this->debugPrint){
-    this->debugPrintOutput->println(s);
-  }
-}
-void BP35A1::printDebug(const String s){
-  if(this->debugPrint){
-    this->debugPrintOutput->print(s);
-  }
-}
-void BP35A1::writeDebug(const uint8_t *c,const size_t size){
-  if(this->debugPrint){
-    this->debugPrintOutput->write(c,size);
-  }
-}
-
 BP35A1::BP35A1(String ID,String Password,int uart_nr) : HardwareSerial(uart_nr){
   this->WPassword = Password;
   this->WID = ID;
-}
-
-void BP35A1::setDebugPrint(HardwareSerial *output){
-  this->debugPrintOutput = output;
 }
 
 size_t BP35A1::execCommand(const SKCmd skCmdNum,const String * const arg){
@@ -36,9 +16,7 @@ size_t BP35A1::execCommand(const SKCmd skCmdNum,const String * const arg){
 }
 
 size_t BP35A1::execCommand(const String &s){
-  if(this->debugPrint){
-    this->debugPrintOutput->println(">> " + s);
-  }
+  log_i(">> %s",s.c_str());
   size_t ret = this->println(s);
   this->flush();
   return ret;
@@ -50,21 +28,25 @@ bool BP35A1::initialize(){
     {
     case SkStatus::uninitialized:
     default:
+      log_i("Sk status uninitialized.");
       if(this->configuration()){
         this->skStatus = SkStatus::scanning;
       };
       break;
     case SkStatus::scanning:
+      log_i("Sk status scanning.");
       if(this->scan()){
         this->skStatus = SkStatus::connecting;
       }
       break;
     case SkStatus::connecting:
+      log_i("Sk status connecting.");
       if(this->connect()){
         this->skStatus = SkStatus::connected;
       }
       break;
     case SkStatus::connected:
+      log_i("Sk status connected.");
       this->printParam();
       return true;
     }
@@ -81,6 +63,7 @@ bool BP35A1::connect(){
   {
   case ConnectStatus::uninitialized:
   default:
+    log_i("Connect status uninitialized.");
     {
       this->execCommand(SKCmd::convertMac2IPv6,&this->CommunicationParameter.macAddress);
       std::vector<String> response;
@@ -92,6 +75,7 @@ bool BP35A1::connect(){
     }
     break;
   case ConnectStatus::getIpv6:
+    log_i("Connect status getIpv6.");
     if(this->setRegister(VirtualRegister::VirtualRegisterNum::ChannelNumber,this->CommunicationParameter.channel) && this->setRegister(VirtualRegister::VirtualRegisterNum::PanId,this->CommunicationParameter.panId)){
       this->connectStatus = ConnectStatus::setComunicationParam;
     }else{
@@ -99,6 +83,7 @@ bool BP35A1::connect(){
     }
     break;
   case ConnectStatus::setComunicationParam:
+    log_i("Connect status setComunicationParam.");
     this->execCommand(SKCmd::joinSKStack,&this->CommunicationParameter.ipv6Address);
     if(this->returnOk()){
       this->connectStatus = ConnectStatus::waitSuccessPANA;
@@ -107,6 +92,7 @@ bool BP35A1::connect(){
     }
     break;
   case ConnectStatus::waitSuccessPANA:
+    log_i("Connect status waitSuccessPANA.");
     {
       String terminator = Event(Event::EventNum::SuccessPANA).toString() + this->CommunicationParameter.ipv6Address;
       if(this->waitResponse(nullptr,0,&terminator,60000)){
@@ -122,16 +108,14 @@ bool BP35A1::connect(){
 }
 
 void BP35A1::printParam(){
-  if(this->debugPrint){
-    this->debugPrintOutput->printf("BP35A1 %s",this->eVer.c_str());
-    this->debugPrintOutput->println("WiSUN Parameter.");
-    this->debugPrintOutput->printf("* MAC: %s\r\n",this->CommunicationParameter.macAddress.c_str());
-    this->debugPrintOutput->printf("* Channel: %s\r\n",this->CommunicationParameter.channel.c_str());
-    this->debugPrintOutput->printf("* PanID: %s\r\n",this->CommunicationParameter.panId.c_str());
-    this->debugPrintOutput->printf("* MAC: %s\r\n",this->CommunicationParameter.macAddress.c_str());
-    this->debugPrintOutput->printf("* IPv6: %s\r\n",this->CommunicationParameter.ipv6Address.c_str());
-    this->debugPrintOutput->printf("* dest IPv6: %s\r\n",this->CommunicationParameter.destIpv6Address.c_str());
-  }
+  log_i("BP35A1 Version: %s",this->eVer.c_str());
+  log_i("MAC: %s",this->CommunicationParameter.macAddress.c_str());
+  log_i("Channel: %s",this->CommunicationParameter.channel.c_str());
+  log_i("PanID %s",this->CommunicationParameter.panId.c_str());
+  log_i("MAC %s",this->CommunicationParameter.macAddress.c_str());
+  log_i("IPv6 %s",this->CommunicationParameter.ipv6Address.c_str());
+  log_i("dest IPv6 %s",this->CommunicationParameter.destIpv6Address.c_str());
+  log_i("BP35A1 %s",this->eVer.c_str());
 }
 
 bool BP35A1::scan(){
@@ -144,6 +128,7 @@ bool BP35A1::scan(){
   {
   case ScanStatus::uninitialized:
   default:
+    log_i("Scan status uninitialized.");
     {
       char s[16];
       snprintf(s, sizeof(s), "%d %X %d",(unsigned char)this->scanMode,this->scanChannelMask,scanRetryCounter + 3);
@@ -155,6 +140,7 @@ bool BP35A1::scan(){
     }
     break;
   case ScanStatus::waitBeacon:
+    log_i("Scan status waitBeacon.");
     {
       std::vector<String> response;
       String terminator = "EVENT 2";
@@ -178,6 +164,7 @@ bool BP35A1::scan(){
     }
     break;
   case ScanStatus::checkScanResult:
+    log_i("Scan status checkScanResult.");
     if(this->parseScanResult()){
       this->scanStatus = ScanStatus::scanned;
       return true;
@@ -194,6 +181,7 @@ bool BP35A1::configuration(){
   {
   case InitializeStatus::uninitialized:
   default:
+    log_i("Initialize status uninitialized.");
     {
       this->execCommand(SKCmd::resetSKStack);
       this->execCommand(SKCmd::disableEcho);
@@ -207,10 +195,12 @@ bool BP35A1::configuration(){
     }
     break;
   case InitializeStatus::getSkVer:
+    log_i("Initialize status getSkVer.");
     this->execCommand(SKCmd::setSKStackPassword,&this->WPassword);
     this->initializeStatus = this->returnOk() ? InitializeStatus::setSkSetpwd : InitializeStatus::uninitialized;
     break;
   case InitializeStatus::setSkSetpwd:
+    log_i("Initialize status setSkSetpwd.");
     this->execCommand(SKCmd::setSKStackID,&this->WID);
     if(this->returnOk()){
       this->initializeStatus = InitializeStatus::initialized;
@@ -261,7 +251,7 @@ bool BP35A1::waitResponse(
     while(this->available()){
       // 1行読み込み
       String line = this->readStringUntil('\n');
-      this->printDebugline("<< " + line);
+      log_i("<< %s",line.c_str());
       // response指定時は結果を格納
       if(response != nullptr){
         response->push_back(line);
@@ -281,7 +271,7 @@ bool BP35A1::waitResponse(
         }else{
           // 何も指定がない場合はFAIL / OKチェック
           if(line.indexOf("FAIL ER") > -1){
-            this->printDebugline("Command execute error");
+            log_i("Command execute error.");
             this->discardBuffer();
             return false;
           }else if(line.indexOf("OK") > -1){
@@ -293,7 +283,7 @@ bool BP35A1::waitResponse(
     timeout+=delayms;
     delay(delayms);
   }
-  this->printDebugline("Timeout");
+  log_i("Timeout");
   return false;
 }
 
@@ -327,13 +317,11 @@ BP35A1::ErxUdp BP35A1::getUdpData(const Echonet::SmartMeterClass dataType,const 
   // send request
   skSendTo udpData = skSendTo(dataType,this->CommunicationParameter.ipv6Address);
   this->print(udpData.getSendString());
-  this->printDebug(">> " + udpData.getSendString());
+  log_i(">> %s",udpData.getSendString().c_str());
 
   this->write((uint8_t*)&udpData.echonet.data,sizeof(Echonet::EchonetData));
-  this->writeDebug((uint8_t*)&udpData.echonet.data,sizeof(Echonet::EchonetData));
 
   this->print("\r\n");
-  this->printDebug("\r\n");
   // send check
   std::vector<String> retval;
   String terminator = Event(Event::EventNum::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address;
