@@ -11,6 +11,10 @@ BP35A1::BP35A1(String ID,String Password,int uart_nr) : HardwareSerial(uart_nr){
   this->WID = ID;
 }
 
+void BP35A1::setStatusChangeCallback(void (*callback)(SkStatus)){
+  this->callback = callback;
+}
+
 size_t BP35A1::execCommand(const SKCmd skCmdNum,const String * const arg){
   return arg == nullptr ? this->execCommand(this->skCmd[skCmdNum]): this->execCommand(this->skCmd[skCmdNum] + " " + *arg);
 }
