@@ -24,6 +24,9 @@ size_t BP35A1::execCommand(const String &s){
 
 bool BP35A1::initialize(){
   while(true){
+    if(this->callback != NULL){
+      this->callback(this->skStatus);
+    }
     switch (this->skStatus)
     {
     case SkStatus::uninitialized:
