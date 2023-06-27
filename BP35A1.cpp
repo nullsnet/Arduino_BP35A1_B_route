@@ -307,7 +307,7 @@ BP35A1::ErxUdp BP35A1::getUdpData(const uint8_t *data, const uint16_t length, co
     // send request
     skSendTo udpData = skSendTo(length, this->CommunicationParameter.ipv6Address);
     this->print(udpData.getSendString());
-    log_i(">> %s(%ld)", udpData.getSendString().c_str(), length);
+    log_i(">> %s", udpData.getSendString().c_str());
 
     this->write(data, length);
     log_buf_n(data, length);
