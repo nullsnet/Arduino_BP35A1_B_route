@@ -186,6 +186,7 @@ bool BP35A1::configuration() {
         default:
             log_i("Initialize status uninitialized.");
             {
+                this->execCommand(SKCmd::terminateSKStack);
                 this->execCommand(SKCmd::resetSKStack);
                 this->execCommand(SKCmd::disableEcho);
                 this->execCommand(SKCmd::getSKStackVersion);
@@ -307,12 +308,17 @@ BP35A1::ErxUdp BP35A1::getUdpData(const uint8_t *data, const uint16_t length, co
     // send request
     skSendTo udpData = skSendTo(length, this->CommunicationParameter.ipv6Address);
     this->print(udpData.getSendString());
-    log_i(">> %s", udpData.getSendString().c_str());
-
     this->write(data, length);
-    log_buf_n(data, length);
-
     this->print("\r\n");
+
+    // dump log
+    char logBuffer[length * 2 + 1];
+    memset(logBuffer, '\0', sizeof(logBuffer));
+    for (size_t i = 0; i < length; i++) {
+        snprintf(&logBuffer[i * 2], sizeof(logBuffer) - (i * 2), "%02X", data[i]);
+    }
+    log_i(">> %s%s", udpData.getSendString().c_str(),logBuffer);
+
     // send check
     std::vector<String> retval;
     String terminator = Event(Event::EventNum::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address;
