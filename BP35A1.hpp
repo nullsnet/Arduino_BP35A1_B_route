@@ -38,7 +38,7 @@ class BP35A1 : public HardwareSerial {
         uint16_t length;
         String payload;
         ErxUdp(){};
-        ErxUdp(String erxUdpData) {
+        explicit ErxUdp(String erxUdpData) {
             std::vector<String> result = split(erxUdpData.c_str(), " ");
             if (result.size() == 9) {
                 this->senderIpv6 = result[1];
@@ -54,14 +54,14 @@ class BP35A1 : public HardwareSerial {
     };
 
     /// @brief Wi-SUNホスト接続状態
-    enum class SkStatus : unsigned char {
+    enum class SkStatus : uint8_t {
         uninitialized, // 未初期化
         scanning,      // スキャン中
         connecting,    // 接続中
         connected,     // 接続完了
     };
 
-    enum class ScanMode : unsigned char {
+    enum class ScanMode : uint8_t {
         EDScan,
         ActiveScanWithIE = 2,
         ActiveScanWithoutIE,
@@ -141,7 +141,7 @@ class BP35A1 : public HardwareSerial {
     } connectStatus = ConnectStatus::uninitialized;
 
     struct Event {
-        enum class EventNum : unsigned char {
+        enum class EventNum : uint8_t {
             ReceiveNS                           = 0x01,
             ReceiveNA                           = 0x02,
             ReceiveEchoRequest                  = 0x05,
@@ -158,40 +158,40 @@ class BP35A1 : public HardwareSerial {
             ErrorARIB108SendingTime             = 0x32,
             ReleaseARIB108SendingTime           = 0x33,
         } eventNum;
-        Event(enum EventNum eventNum)
+        explicit Event(enum EventNum eventNum)
             : eventNum(eventNum) {}
         String toString(bool addBlank = true) {
             char c[16];
             if (addBlank) {
-                snprintf(c, sizeof(c), "EVENT %02X ", (unsigned char)eventNum);
+                snprintf(c, sizeof(c), "EVENT %02X ", (uint8_t)eventNum);
             } else {
-                snprintf(c, sizeof(c), "EVENT %02X", (unsigned char)eventNum);
+                snprintf(c, sizeof(c), "EVENT %02X", (uint8_t)eventNum);
             }
             return String(c);
         }
     };
 
     struct EventStatus {
-        enum class EventStatusNum : unsigned char {
+        enum class EventStatusNum : uint8_t {
             SuccessUdpSend       = 0x00,
             FailedUdpSend        = 0x01,
             NeighborSolicitation = 0x02,
         } eventStatusNum;
-        EventStatus(enum EventStatusNum eventStatusNum)
+        explicit EventStatus(enum EventStatusNum eventStatusNum)
             : eventStatusNum(eventStatusNum) {}
         String toString(bool addBlank = true) {
             char c[16];
             if (addBlank) {
-                snprintf(c, sizeof(c), " %02X", (unsigned char)eventStatusNum);
+                snprintf(c, sizeof(c), " %02X", (uint8_t)eventStatusNum);
             } else {
-                snprintf(c, sizeof(c), "%02X", (unsigned char)eventStatusNum);
+                snprintf(c, sizeof(c), "%02X", (uint8_t)eventStatusNum);
             }
             return String(c);
         }
     };
 
     struct VirtualRegister {
-        enum class VirtualRegisterNum : unsigned char {
+        enum class VirtualRegisterNum : uint8_t {
             ChannelNumber          = 0x02,
             PanId                  = 0x03,
             FrameCounter           = 0x07,
@@ -206,11 +206,11 @@ class BP35A1 : public HardwareSerial {
             EchoBack               = 0xFE,
             AutoLoad               = 0xFF,
         } virtualRegisterNum;
-        VirtualRegister(enum VirtualRegisterNum virtualRegisterNum)
+        explicit VirtualRegister(enum VirtualRegisterNum virtualRegisterNum)
             : virtualRegisterNum(virtualRegisterNum) {}
         String toString() {
             char c[16];
-            snprintf(c, sizeof(c), "S%X", (unsigned char)virtualRegisterNum);
+            snprintf(c, sizeof(c), "S%X", (uint8_t)virtualRegisterNum);
             return String(c);
         }
     };

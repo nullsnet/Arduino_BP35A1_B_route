@@ -135,7 +135,7 @@ bool BP35A1::scan() {
             log_i("Scan status uninitialized.");
             {
                 char s[16];
-                snprintf(s, sizeof(s), "%d %X %d", (unsigned char)this->scanMode, this->scanChannelMask, scanRetryCounter + 3);
+                snprintf(s, sizeof(s), "%d %X %d", (uint8_t)this->scanMode, this->scanChannelMask, scanRetryCounter + 3);
                 String arg = String(s);
                 this->execCommand(SKCmd::scanSKStack, &arg);
                 if (this->returnOk()) {
