@@ -31,9 +31,8 @@ size_t BP35A1::execCommand(const String &s) {
 /// @details Wi-SUNアダプタと接続して通信可能な状態にする
 bool BP35A1::initialize() {
     while (true) {
-        if (this->callback != NULL) {
+        if (this->callback != NULL)
             this->callback(this->skStatus);
-        }
         switch (this->skStatus) {
             case SkStatus::uninitialized:
             default:
@@ -56,9 +55,8 @@ bool BP35A1::initialize() {
                 this->printParam();
                 return true;
         }
-        if (this->initializeFailed) {
+        if (this->initializeFailed)
             break;
-        }
         delay(500);
     }
     return false;
@@ -90,26 +88,17 @@ bool BP35A1::connect() {
         case ConnectStatus::setComunicationParam:
             log_i("Connect status setComunicationParam.");
             this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address);
-            if (this->returnOk()) {
-                this->connectStatus = ConnectStatus::waitSuccessPANA;
-            } else {
-                this->connectStatus = ConnectStatus::uninitialized;
-            }
+            this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
             break;
         case ConnectStatus::waitSuccessPANA:
             log_i("Connect status waitSuccessPANA.");
             {
-                String terminator = Event(Event::EventNum::SuccessPANA).toString() + this->CommunicationParameter.ipv6Address;
-                if (this->waitResponse(nullptr, 0, &terminator, 60000)) {
-                    this->connectStatus = ConnectStatus::connected;
-                    return true;
-                } else {
-                    this->connectStatus = ConnectStatus::uninitialized;
-                }
+                String terminator   = Event(Event::EventNum::SuccessPANA).toString() + this->CommunicationParameter.ipv6Address;
+                this->connectStatus = this->waitResponse(nullptr, 0, &terminator, 60000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
             }
             break;
     }
-    return false;
+    return this->connectStatus == ConnectStatus::connected;
 }
 
 void BP35A1::printParam() {
@@ -169,15 +158,10 @@ bool BP35A1::scan() {
             break;
         case ScanStatus::checkScanResult:
             log_i("Scan status checkScanResult.");
-            if (this->parseScanResult()) {
-                this->scanStatus = ScanStatus::scanned;
-                return true;
-            } else {
-                this->scanStatus = ScanStatus::uninitialized;
-            }
+            this->scanStatus = this->parseScanResult() ? ScanStatus::scanned : ScanStatus::uninitialized;
             break;
     }
-    return false;
+    return this->scanStatus == ScanStatus::scanned;
 }
 
 bool BP35A1::configuration() {
@@ -208,13 +192,12 @@ bool BP35A1::configuration() {
             this->execCommand(SKCmd::setSKStackID, &this->WID);
             if (this->returnOk()) {
                 this->initializeStatus = InitializeStatus::initialized;
-                return true;
             } else {
                 this->initializeStatus = InitializeStatus::uninitialized;
             }
             break;
     }
-    return false;
+    return this->initializeStatus == InitializeStatus::initialized;
 }
 
 void BP35A1::discardBuffer(const uint32_t delayms) {
@@ -304,7 +287,7 @@ bool BP35A1::parseScanResult() {
     }
 }
 
-BP35A1::ErxUdp BP35A1::getUdpData(const uint8_t *data, const uint16_t length, const uint32_t delayms, const uint32_t timeoutms) {
+bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t delayms, const uint32_t timeoutms) {
     // send request
     skSendTo udpData = skSendTo(length, this->CommunicationParameter.ipv6Address);
     this->print(udpData.getSendString());
@@ -317,21 +300,25 @@ BP35A1::ErxUdp BP35A1::getUdpData(const uint8_t *data, const uint16_t length, co
     for (size_t i = 0; i < length; i++) {
         snprintf(&logBuffer[i * 2], sizeof(logBuffer) - (i * 2), "%02X", data[i]);
     }
-    log_i(">> %s%s", udpData.getSendString().c_str(),logBuffer);
+    log_i(">> %s%s", udpData.getSendString().c_str(), logBuffer);
 
     // send check
     std::vector<String> retval;
     String terminator = Event(Event::EventNum::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address;
     if (this->waitResponse(&retval, 0, &terminator, timeoutms, delayms)) {
         if (retval.back().indexOf(terminator + EventStatus(EventStatus::EventStatusNum::SuccessUdpSend).toString()) > -1) {
-            // UDP送信成功
-            std::vector<String> response;
-            terminator = "ERXUDP " + this->CommunicationParameter.ipv6Address;
-            if (this->waitResponse(&response, 0, &terminator, timeoutms, delayms)) {
-                // receive response
-                return ErxUdp(response.back());
-            }
+            return true;
         }
+    }
+    return false;
+}
+
+BP35A1::ErxUdp BP35A1::getUdpData(const uint32_t delayms, const uint32_t timeoutms) {
+    std::vector<String> response;
+    String terminator = "ERXUDP " + this->CommunicationParameter.ipv6Address;
+    if (this->waitResponse(&response, 0, &terminator, timeoutms, delayms)) {
+        // receive response
+        return ErxUdp(response.back());
     }
     return ErxUdp();
 }

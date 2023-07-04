@@ -69,7 +69,8 @@ class BP35A1 : public HardwareSerial {
     unsigned int scanChannelMask = 0xFFFFFFFF;
     void setStatusChangeCallback(void (*callback)(SkStatus));
 
-    ErxUdp getUdpData(const uint8_t *data, const uint16_t length, const uint32_t delayms = 100, const uint32_t timeoutms = 3000);
+    bool sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t delayms = 100, const uint32_t timeoutms = 3000);
+    ErxUdp getUdpData(const uint32_t delayms = 100, const uint32_t timeoutms = 3000);
     std::vector<uint8_t> getPayload(const uint8_t dataType, const uint32_t delayms = 100, const uint32_t timeoutms = 3000);
     BP35A1(String ID, String Password, int uart_nr = 1);
     unsigned int scanRetryCount = 9;
@@ -162,11 +163,7 @@ class BP35A1 : public HardwareSerial {
             : eventNum(eventNum) {}
         String toString(bool addBlank = true) {
             char c[16];
-            if (addBlank) {
-                snprintf(c, sizeof(c), "EVENT %02X ", (uint8_t)eventNum);
-            } else {
-                snprintf(c, sizeof(c), "EVENT %02X", (uint8_t)eventNum);
-            }
+            snprintf(c, sizeof(c), addBlank ? "EVENT %02X " : "EVENT %02X", (uint8_t)eventNum);
             return String(c);
         }
     };
@@ -181,11 +178,7 @@ class BP35A1 : public HardwareSerial {
             : eventStatusNum(eventStatusNum) {}
         String toString(bool addBlank = true) {
             char c[16];
-            if (addBlank) {
-                snprintf(c, sizeof(c), " %02X", (uint8_t)eventStatusNum);
-            } else {
-                snprintf(c, sizeof(c), "%02X", (uint8_t)eventStatusNum);
-            }
+            snprintf(c, sizeof(c), addBlank ? " %02X" : "%02X", (uint8_t)eventStatusNum);
             return String(c);
         }
     };
