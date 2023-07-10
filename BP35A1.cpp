@@ -21,7 +21,7 @@ size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
 }
 
 size_t BP35A1::execCommand(const String &s) {
-    log_i(">> %s", s.c_str());
+    log_d(">> %s", s.c_str());
     size_t ret = this->println(s);
     this->flush();
     return ret;
@@ -36,22 +36,22 @@ bool BP35A1::initialize() {
         switch (this->skStatus) {
             case SkStatus::uninitialized:
             default:
-                log_i("Sk status uninitialized.");
+                log_d("Sk status uninitialized.");
                 if (this->configuration())
                     this->skStatus = SkStatus::scanning;
                 break;
             case SkStatus::scanning:
-                log_i("Sk status scanning.");
+                log_d("Sk status scanning.");
                 if (this->scan())
                     this->skStatus = SkStatus::connecting;
                 break;
             case SkStatus::connecting:
-                log_i("Sk status connecting.");
+                log_d("Sk status connecting.");
                 if (this->connect())
                     this->skStatus = SkStatus::connected;
                 break;
             case SkStatus::connected:
-                log_i("Sk status connected.");
+                log_d("Sk status connected.");
                 this->printParam();
                 return true;
         }
@@ -66,7 +66,7 @@ bool BP35A1::connect() {
     switch (this->connectStatus) {
         case ConnectStatus::uninitialized:
         default:
-            log_i("Connect status uninitialized.");
+            log_d("Connect status uninitialized.");
             {
                 this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
                 std::vector<String> response;
@@ -78,7 +78,7 @@ bool BP35A1::connect() {
             }
             break;
         case ConnectStatus::getIpv6:
-            log_i("Connect status getIpv6.");
+            log_d("Connect status getIpv6.");
             if (this->setRegister(VirtualRegister::VirtualRegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->setRegister(VirtualRegister::VirtualRegisterNum::PanId, this->CommunicationParameter.panId)) {
                 this->connectStatus = ConnectStatus::setComunicationParam;
             } else {
@@ -86,12 +86,12 @@ bool BP35A1::connect() {
             }
             break;
         case ConnectStatus::setComunicationParam:
-            log_i("Connect status setComunicationParam.");
+            log_d("Connect status setComunicationParam.");
             this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address);
             this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
             break;
         case ConnectStatus::waitSuccessPANA:
-            log_i("Connect status waitSuccessPANA.");
+            log_d("Connect status waitSuccessPANA.");
             {
                 String terminator   = Event(Event::EventNum::SuccessPANA).toString() + this->CommunicationParameter.ipv6Address;
                 this->connectStatus = this->waitResponse(nullptr, 0, &terminator, 60000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
@@ -102,14 +102,14 @@ bool BP35A1::connect() {
 }
 
 void BP35A1::printParam() {
-    log_i("BP35A1 Version: %s", this->eVer.c_str());
-    log_i("MAC: %s", this->CommunicationParameter.macAddress.c_str());
-    log_i("Channel: %s", this->CommunicationParameter.channel.c_str());
-    log_i("PanID %s", this->CommunicationParameter.panId.c_str());
-    log_i("MAC %s", this->CommunicationParameter.macAddress.c_str());
-    log_i("IPv6 %s", this->CommunicationParameter.ipv6Address.c_str());
-    log_i("dest IPv6 %s", this->CommunicationParameter.destIpv6Address.c_str());
-    log_i("BP35A1 %s", this->eVer.c_str());
+    log_d("BP35A1 Version: %s", this->eVer.c_str());
+    log_d("MAC: %s", this->CommunicationParameter.macAddress.c_str());
+    log_d("Channel: %s", this->CommunicationParameter.channel.c_str());
+    log_d("PanID %s", this->CommunicationParameter.panId.c_str());
+    log_d("MAC %s", this->CommunicationParameter.macAddress.c_str());
+    log_d("IPv6 %s", this->CommunicationParameter.ipv6Address.c_str());
+    log_d("dest IPv6 %s", this->CommunicationParameter.destIpv6Address.c_str());
+    log_d("BP35A1 %s", this->eVer.c_str());
 }
 
 bool BP35A1::scan() {
@@ -121,7 +121,7 @@ bool BP35A1::scan() {
     switch (this->scanStatus) {
         case ScanStatus::uninitialized:
         default:
-            log_i("Scan status uninitialized.");
+            log_d("Scan status uninitialized.");
             {
                 char s[16];
                 snprintf(s, sizeof(s), "%d %X %d", (uint8_t)this->scanMode, this->scanChannelMask, scanRetryCounter + 3);
@@ -133,7 +133,7 @@ bool BP35A1::scan() {
             }
             break;
         case ScanStatus::waitBeacon:
-            log_i("Scan status waitBeacon.");
+            log_d("Scan status waitBeacon.");
             {
                 std::vector<String> response;
                 String terminator         = "EVENT 2";
@@ -157,7 +157,7 @@ bool BP35A1::scan() {
             }
             break;
         case ScanStatus::checkScanResult:
-            log_i("Scan status checkScanResult.");
+            log_d("Scan status checkScanResult.");
             this->scanStatus = this->parseScanResult() ? ScanStatus::scanned : ScanStatus::uninitialized;
             break;
     }
@@ -168,7 +168,7 @@ bool BP35A1::configuration() {
     switch (this->initializeStatus) {
         case InitializeStatus::uninitialized:
         default:
-            log_i("Initialize status uninitialized.");
+            log_d("Initialize status uninitialized.");
             {
                 this->execCommand(SKCmd::terminateSKStack);
                 this->execCommand(SKCmd::resetSKStack);
@@ -183,12 +183,12 @@ bool BP35A1::configuration() {
             }
             break;
         case InitializeStatus::getSkVer:
-            log_i("Initialize status getSkVer.");
+            log_d("Initialize status getSkVer.");
             this->execCommand(SKCmd::setSKStackPassword, &this->WPassword);
             this->initializeStatus = this->returnOk() ? InitializeStatus::setSkSetpwd : InitializeStatus::uninitialized;
             break;
         case InitializeStatus::setSkSetpwd:
-            log_i("Initialize status setSkSetpwd.");
+            log_d("Initialize status setSkSetpwd.");
             this->execCommand(SKCmd::setSKStackID, &this->WID);
             if (this->returnOk()) {
                 this->initializeStatus = InitializeStatus::initialized;
@@ -225,7 +225,7 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
         while (this->available()) {
             // 1行読み込み
             String line = this->readStringUntil('\n');
-            log_i("<< %s", line.c_str());
+            log_d("<< %s", line.c_str());
             // response指定時は結果を格納
             if (response != nullptr) {
                 response->push_back(line);
@@ -245,7 +245,7 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
                 } else {
                     // 何も指定がない場合はFAIL / OKチェック
                     if (line.indexOf("FAIL ER") > -1) {
-                        log_i("Command execute error.");
+                        log_d("Command execute error.");
                         this->discardBuffer();
                         return false;
                     } else if (line.indexOf("OK") > -1) {
@@ -257,7 +257,7 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
         timeout += delayms;
         delay(delayms);
     }
-    log_i("Timeout");
+    log_d("Timeout");
     return false;
 }
 
@@ -300,7 +300,7 @@ bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint3
     for (size_t i = 0; i < length; i++) {
         snprintf(&logBuffer[i * 2], sizeof(logBuffer) - (i * 2), "%02X", data[i]);
     }
-    log_i(">> %s%s", udpData.getSendString().c_str(), logBuffer);
+    log_d(">> %s%s", udpData.getSendString().c_str(), logBuffer);
 
     // send check
     std::vector<String> retval;
