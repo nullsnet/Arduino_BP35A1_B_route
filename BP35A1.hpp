@@ -103,6 +103,8 @@ class BP35A1 : public HardwareSerial {
         "SKJOIN",
         "SKSCAN",
         "SKRESET",
+        "ROPT",
+        "WOPT",
     };
 
     enum SKCmd {
@@ -115,6 +117,8 @@ class BP35A1 : public HardwareSerial {
         joinSKStack,        // 指定したIPADDRに対してPaC（PANA 認証クライアント）としてPANA接続シーケンスを開始します,
         scanSKStack,        // 指定したチャンネルに対してアクティブスキャンまたは EDスキャンを実行します,
         resetSKStack,       // SKスタックのリセット
+        readOpt,            // WOPT コマンドの設定状態を表示します。
+        writeOpt,           // ERXUDP、ERXTCP のデータ部の表示形式を設定します。
     };
 
     /// @brief 初期化状態
@@ -122,6 +126,8 @@ class BP35A1 : public HardwareSerial {
         uninitialized, // 未初期化
         getSkVer,      //
         setSkSetpwd,
+        checkDataFormat,
+        setDataFormat,
         initialized,
     } initializeStatus = InitializeStatus::uninitialized;
 

@@ -190,10 +190,22 @@ bool BP35A1::configuration() {
         case InitializeStatus::setSkSetpwd:
             log_d("Initialize status setSkSetpwd.");
             this->execCommand(SKCmd::setSKStackID, &this->WID);
-            if (this->returnOk()) {
-                this->initializeStatus = InitializeStatus::initialized;
-            } else {
-                this->initializeStatus = InitializeStatus::uninitialized;
+            this->initializeStatus = this->returnOk() ? InitializeStatus::checkDataFormat : InitializeStatus::uninitialized;
+            break;
+        case InitializeStatus::checkDataFormat:
+            log_d("Initialize status checkDataFormat.");
+            {
+                const String terminator = "OK 01";
+                this->execCommand(SKCmd::readOpt);
+                this->initializeStatus = this->waitResponse(nullptr, 0, &terminator) ? InitializeStatus::initialized : InitializeStatus::setDataFormat;
+            }
+            break;
+        case InitializeStatus::setDataFormat:
+            log_d("Initialize status setDataFormat.");
+            {
+                const String arg = "01";
+                this->execCommand(SKCmd::writeOpt, &arg);
+                this->initializeStatus = this->returnOk() ? InitializeStatus::initialized : InitializeStatus::uninitialized;
             }
             break;
     }
