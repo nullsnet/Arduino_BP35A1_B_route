@@ -29,74 +29,90 @@ size_t BP35A1::execCommand(const String &s) {
 
 /// @brief 初期化
 /// @details Wi-SUNアダプタと接続して通信可能な状態にする
-bool BP35A1::initialize() {
-    while (true) {
-        if (this->callback != NULL)
+bool BP35A1::initialize(const uint32_t tryTimes) {
+    uint32_t retryCount = 0;
+    while (retryCount < tryTimes) {
+        if (this->callback != NULL) {
             this->callback(this->skStatus);
+        }
         switch (this->skStatus) {
             case SkStatus::uninitialized:
             default:
                 log_d("Sk status uninitialized.");
-                if (this->configuration())
+                if (this->configuration(1)) {
                     this->skStatus = SkStatus::scanning;
+                } else {
+                    retryCount++;
+                }
                 break;
             case SkStatus::scanning:
                 log_d("Sk status scanning.");
-                if (this->scan())
+                if (this->scan(1)) {
                     this->skStatus = SkStatus::connecting;
+                } else {
+                    retryCount++;
+                }
                 break;
             case SkStatus::connecting:
                 log_d("Sk status connecting.");
-                if (this->connect())
+                if (this->connect(1)) {
                     this->skStatus = SkStatus::connected;
+                } else {
+                    retryCount++;
+                }
                 break;
-            case SkStatus::connected:
-                log_d("Sk status connected.");
-                this->printParam();
-                return true;
         }
-        if (this->initializeFailed)
+        if (this->skStatus == SkStatus::connected) {
+            log_d("Sk status connected.");
+            this->printParam();
             break;
-        delay(500);
+        }
     }
-    return false;
+    return this->skStatus == SkStatus::connected;
 }
 
-bool BP35A1::connect() {
-    switch (this->connectStatus) {
-        case ConnectStatus::uninitialized:
-        default:
-            log_d("Connect status uninitialized.");
-            {
-                this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
-                std::vector<String> response;
-                if (this->waitResponse(&response, 1)) {
-                    this->CommunicationParameter.ipv6Address = response.front();
-                    this->CommunicationParameter.ipv6Address.trim();
-                    this->connectStatus = ConnectStatus::getIpv6;
+bool BP35A1::connect(const uint32_t tryTimes) {
+    uint32_t retryCount = 0;
+    while (retryCount < tryTimes) {
+        switch (this->connectStatus) {
+            case ConnectStatus::uninitialized:
+            default:
+                log_d("Connect status uninitialized.");
+                {
+                    this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
+                    std::vector<String> response;
+                    if (this->waitResponse(&response, 1)) {
+                        this->CommunicationParameter.ipv6Address = response.front();
+                        this->CommunicationParameter.ipv6Address.trim();
+                        this->connectStatus = ConnectStatus::getIpv6;
+                    }
                 }
-            }
+                retryCount++;
+                break;
+            case ConnectStatus::getIpv6:
+                log_d("Connect status getIpv6.");
+                if (this->setRegister(VirtualRegister::VirtualRegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->setRegister(VirtualRegister::VirtualRegisterNum::PanId, this->CommunicationParameter.panId)) {
+                    this->connectStatus = ConnectStatus::setComunicationParam;
+                } else {
+                    this->connectStatus = ConnectStatus::uninitialized;
+                }
+                break;
+            case ConnectStatus::setComunicationParam:
+                log_d("Connect status setComunicationParam.");
+                this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address);
+                this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
+                break;
+            case ConnectStatus::waitSuccessPANA:
+                log_d("Connect status waitSuccessPANA.");
+                {
+                    String terminator   = Event(Event::EventNum::SuccessPANA).toString() + this->CommunicationParameter.ipv6Address;
+                    this->connectStatus = this->waitResponse(nullptr, 0, &terminator, 100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
+                }
+                break;
+        }
+        if (this->connectStatus == ConnectStatus::connected) {
             break;
-        case ConnectStatus::getIpv6:
-            log_d("Connect status getIpv6.");
-            if (this->setRegister(VirtualRegister::VirtualRegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->setRegister(VirtualRegister::VirtualRegisterNum::PanId, this->CommunicationParameter.panId)) {
-                this->connectStatus = ConnectStatus::setComunicationParam;
-            } else {
-                this->connectStatus = ConnectStatus::uninitialized;
-            }
-            break;
-        case ConnectStatus::setComunicationParam:
-            log_d("Connect status setComunicationParam.");
-            this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address);
-            this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
-            break;
-        case ConnectStatus::waitSuccessPANA:
-            log_d("Connect status waitSuccessPANA.");
-            {
-                String terminator   = Event(Event::EventNum::SuccessPANA).toString() + this->CommunicationParameter.ipv6Address;
-                this->connectStatus = this->waitResponse(nullptr, 0, &terminator, 60000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
-            }
-            break;
+        }
     }
     return this->connectStatus == ConnectStatus::connected;
 }
@@ -112,102 +128,118 @@ void BP35A1::printParam() {
     log_d("BP35A1 %s", this->eVer.c_str());
 }
 
-bool BP35A1::scan() {
-    static int scanRetryCounter = 0;
-    if (this->initializeFailed || scanRetryCounter > this->scanRetryCount) {
-        this->initializeFailed = true;
-        return false;
+bool BP35A1::scanning(const uint32_t duration) {
+    char s[16];
+    snprintf(s, sizeof(s), "%d %X %d", (uint8_t)this->scanMode, this->scanChannelMask, duration);
+    String arg = String(s);
+    this->execCommand(SKCmd::scanSKStack, &arg);
+    return this->returnOk();
+}
+
+bool BP35A1::waitBeacon(const uint32_t timeoutms) {
+    std::vector<String> response;
+    String terminator         = "EVENT 2";
+    String receiveBeacon      = Event(Event::EventNum::ReceiveBeacon).toString();
+    String completeActiveScan = Event(Event::EventNum::CompleteActiveScan).toString();
+    while (1) {
+        if (this->waitResponse(&response, 0, &terminator, timeoutms)) {
+            if (response[0].indexOf(receiveBeacon) > -1) {
+                // ビーコン受信の場合は次へ
+                this->CommunicationParameter.destIpv6Address = response[0].substring(response[0].indexOf(receiveBeacon) + 9);
+                return true;
+            } else {
+                // ビーコン受信以外(スキャン完了)の場合は読み込み継続
+                return false;
+            }
+        }
     }
-    switch (this->scanStatus) {
-        case ScanStatus::uninitialized:
-        default:
-            log_d("Scan status uninitialized.");
-            {
-                char s[16];
-                snprintf(s, sizeof(s), "%d %X %d", (uint8_t)this->scanMode, this->scanChannelMask, scanRetryCounter + 3);
-                String arg = String(s);
-                this->execCommand(SKCmd::scanSKStack, &arg);
-                if (this->returnOk()) {
+}
+
+bool BP35A1::scan(const uint32_t tryTimes) {
+    uint32_t retryCount         = 0;
+    static int scanRetryCounter = 0;
+    while (retryCount < tryTimes) {
+        switch (this->scanStatus) {
+            case ScanStatus::uninitialized:
+            default:
+                log_d("Scan status uninitialized.");
+                if (this->scanning(scanRetryCounter + 3)) {
                     this->scanStatus = ScanStatus::waitBeacon;
                 }
-            }
-            break;
-        case ScanStatus::waitBeacon:
-            log_d("Scan status waitBeacon.");
-            {
-                std::vector<String> response;
-                String terminator         = "EVENT 2";
-                String receiveBeacon      = Event(Event::EventNum::ReceiveBeacon).toString();
-                String completeActiveScan = Event(Event::EventNum::CompleteActiveScan).toString();
-                while (1) {
-                    if (this->waitResponse(&response, 0, &terminator, scanRetryCounter * 10000)) {
-                        if (response[0].indexOf(receiveBeacon) > -1) {
-                            // ビーコン受信の場合は次へ
-                            this->CommunicationParameter.destIpv6Address = response[0].substring(response[0].indexOf(receiveBeacon) + 9);
-                            this->scanStatus                             = ScanStatus::checkScanResult;
-                            break;
-                        } else {
-                            // ビーコン受信以外(スキャン完了)の場合は読み込み継続
-                            scanRetryCounter++;
-                            this->scanStatus = ScanStatus::uninitialized;
-                            break;
-                        }
-                    }
+                retryCount++;
+                break;
+            case ScanStatus::waitBeacon:
+                log_d("Scan status waitBeacon.");
+                if (this->waitBeacon(scanRetryCounter * 10000)) {
+                    this->scanStatus = ScanStatus::checkScanResult;
+                } else {
+                    scanRetryCounter++;
+                    this->scanStatus = ScanStatus::uninitialized;
                 }
-            }
+                break;
+            case ScanStatus::checkScanResult:
+                log_d("Scan status checkScanResult.");
+                this->scanStatus = this->parseScanResult() ? ScanStatus::scanned : ScanStatus::uninitialized;
+                break;
+        }
+        if (this->scanStatus == ScanStatus::scanned) {
             break;
-        case ScanStatus::checkScanResult:
-            log_d("Scan status checkScanResult.");
-            this->scanStatus = this->parseScanResult() ? ScanStatus::scanned : ScanStatus::uninitialized;
-            break;
+        }
     }
     return this->scanStatus == ScanStatus::scanned;
 }
 
-bool BP35A1::configuration() {
-    switch (this->initializeStatus) {
-        case InitializeStatus::uninitialized:
-        default:
-            log_d("Initialize status uninitialized.");
-            {
-                this->execCommand(SKCmd::terminateSKStack);
-                this->execCommand(SKCmd::resetSKStack);
-                this->execCommand(SKCmd::disableEcho);
-                this->execCommand(SKCmd::getSKStackVersion);
-                std::vector<String> response;
-                String terminator = "EVER";
-                if (waitResponse(&response, 0, &terminator)) {
-                    this->eVer             = response.front();
-                    this->initializeStatus = InitializeStatus::getSkVer;
+bool BP35A1::configuration(const uint32_t tryTimes) {
+    uint32_t retryCount = 0;
+    while (retryCount < tryTimes) {
+        switch (this->initializeStatus) {
+            case InitializeStatus::uninitialized:
+            default:
+                log_d("Initialize status uninitialized.");
+                {
+                    this->execCommand(SKCmd::terminateSKStack);
+                    this->execCommand(SKCmd::resetSKStack);
+                    this->execCommand(SKCmd::disableEcho);
+                    this->execCommand(SKCmd::getSKStackVersion);
+                    std::vector<String> response;
+                    String terminator = "EVER";
+                    if (waitResponse(&response, 0, &terminator)) {
+                        this->eVer             = response.front();
+                        this->initializeStatus = InitializeStatus::getSkVer;
+                    }
                 }
-            }
+                retryCount++;
+                break;
+            case InitializeStatus::getSkVer:
+                log_d("Initialize status getSkVer.");
+                this->execCommand(SKCmd::setSKStackPassword, &this->WPassword);
+                this->initializeStatus = this->returnOk() ? InitializeStatus::setSkSetpwd : InitializeStatus::uninitialized;
+                break;
+            case InitializeStatus::setSkSetpwd:
+                log_d("Initialize status setSkSetpwd.");
+                this->execCommand(SKCmd::setSKStackID, &this->WID);
+                this->initializeStatus = this->returnOk() ? InitializeStatus::checkDataFormat : InitializeStatus::uninitialized;
+                break;
+            case InitializeStatus::checkDataFormat:
+                log_d("Initialize status checkDataFormat.");
+                {
+                    const String terminator = "OK 01";
+                    this->execCommand(SKCmd::readOpt);
+                    this->initializeStatus = this->waitResponse(nullptr, 0, &terminator) ? InitializeStatus::initialized : InitializeStatus::setDataFormat;
+                }
+                break;
+            case InitializeStatus::setDataFormat:
+                log_d("Initialize status setDataFormat.");
+                {
+                    const String arg = "01";
+                    this->execCommand(SKCmd::writeOpt, &arg);
+                    this->initializeStatus = this->returnOk() ? InitializeStatus::initialized : InitializeStatus::uninitialized;
+                }
+                break;
+        }
+        if (this->initializeStatus == InitializeStatus::initialized) {
             break;
-        case InitializeStatus::getSkVer:
-            log_d("Initialize status getSkVer.");
-            this->execCommand(SKCmd::setSKStackPassword, &this->WPassword);
-            this->initializeStatus = this->returnOk() ? InitializeStatus::setSkSetpwd : InitializeStatus::uninitialized;
-            break;
-        case InitializeStatus::setSkSetpwd:
-            log_d("Initialize status setSkSetpwd.");
-            this->execCommand(SKCmd::setSKStackID, &this->WID);
-            this->initializeStatus = this->returnOk() ? InitializeStatus::checkDataFormat : InitializeStatus::uninitialized;
-            break;
-        case InitializeStatus::checkDataFormat:
-            log_d("Initialize status checkDataFormat.");
-            {
-                const String terminator = "OK 01";
-                this->execCommand(SKCmd::readOpt);
-                this->initializeStatus = this->waitResponse(nullptr, 0, &terminator) ? InitializeStatus::initialized : InitializeStatus::setDataFormat;
-            }
-            break;
-        case InitializeStatus::setDataFormat:
-            log_d("Initialize status setDataFormat.");
-            {
-                const String arg = "01";
-                this->execCommand(SKCmd::writeOpt, &arg);
-                this->initializeStatus = this->returnOk() ? InitializeStatus::initialized : InitializeStatus::uninitialized;
-            }
-            break;
+        }
     }
     return this->initializeStatus == InitializeStatus::initialized;
 }

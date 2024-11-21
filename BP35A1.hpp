@@ -37,7 +37,7 @@ class BP35A1 : public HardwareSerial {
         bool secured;
         uint16_t length;
         String payload;
-        ErxUdp(){};
+        ErxUdp() {};
         explicit ErxUdp(String erxUdpData) {
             std::vector<String> result = split(erxUdpData.c_str(), " ");
             if (result.size() == 9) {
@@ -74,13 +74,17 @@ class BP35A1 : public HardwareSerial {
     std::vector<uint8_t> getPayload(const uint8_t dataType, const uint32_t delayms = 100, const uint32_t timeoutms = 3000);
     BP35A1(String ID, String Password, int uart_nr = 1);
     unsigned int scanRetryCount = 9;
-    bool initialize();
+    bool initialize(const uint32_t tryTimes = 1);
+    bool connect(const uint32_t tryTimes = 1);
+    bool scanning(const uint32_t duration);
+    bool waitBeacon(const uint32_t timeoutms);
+    bool scan(const uint32_t tryTimes = 1);
+    bool configuration(const uint32_t tryTimes = 1);
 
   private:
     String eVer;
     String WPassword;
     String WID;
-    bool initializeFailed      = false;
     SkStatus skStatus          = SkStatus::uninitialized;
     void (*callback)(SkStatus) = NULL; // BP35A1のステータス変更を通知するコールバック
     struct {
@@ -242,8 +246,5 @@ class BP35A1 : public HardwareSerial {
     bool waitResponse(std::vector<String> *const response = nullptr, const uint32_t lines = 0, const String *const terminator = nullptr, const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
     void discardBuffer(uint32_t delayms = 1000);
     bool parseScanResult();
-    bool connect();
-    bool scan();
-    bool configuration();
     void printParam();
 };
