@@ -71,6 +71,30 @@ bool BP35A1::initialize(const uint32_t tryTimes) {
     return this->skStatus == SkStatus::connected;
 }
 
+bool BP35A1::waitPANA(const uint32_t timeoutms) {
+    std::vector<String> response;
+    String terminator = "EVENT";
+    while (1) {
+        response.clear();
+        if (this->waitResponse(&response, 0, &terminator, timeoutms)) {
+            for (String line : response) {
+                Event::Data event = Event::parseEvent(line.c_str(), line.length());
+                switch (event.num) {
+                    case Event::EventNum::SuccessPANA:
+                        log_d("Success PANA");
+                        return true;
+                    case Event::EventNum::FailedPANA:
+                        log_d("Failed PANA... Retry");
+                        return false;
+                    default:
+                        log_d("Received Event : %02X", event.num);
+                        break;
+                }
+            }
+        }
+    }
+}
+
 bool BP35A1::connect(const uint32_t tryTimes) {
     uint32_t retryCount = 0;
     while (retryCount < tryTimes) {
@@ -104,10 +128,7 @@ bool BP35A1::connect(const uint32_t tryTimes) {
                 break;
             case ConnectStatus::waitSuccessPANA:
                 log_d("Connect status waitSuccessPANA.");
-                {
-                    String terminator   = Event(Event::EventNum::SuccessPANA).toString() + this->CommunicationParameter.ipv6Address;
-                    this->connectStatus = this->waitResponse(nullptr, 0, &terminator, 100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
-                }
+                this->connectStatus = this->waitPANA(100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
                 break;
         }
         if (this->connectStatus == ConnectStatus::connected) {
@@ -138,18 +159,26 @@ bool BP35A1::scanning(const uint32_t duration) {
 
 bool BP35A1::waitBeacon(const uint32_t timeoutms) {
     std::vector<String> response;
-    String terminator         = "EVENT 2";
-    String receiveBeacon      = Event(Event::EventNum::ReceiveBeacon).toString();
-    String completeActiveScan = Event(Event::EventNum::CompleteActiveScan).toString();
+    String terminator = "EVENT";
     while (1) {
+        response.clear();
         if (this->waitResponse(&response, 0, &terminator, timeoutms)) {
-            if (response[0].indexOf(receiveBeacon) > -1) {
-                // ビーコン受信の場合は次へ
-                this->CommunicationParameter.destIpv6Address = response[0].substring(response[0].indexOf(receiveBeacon) + 9);
-                return true;
-            } else {
-                // ビーコン受信以外(スキャン完了)の場合は読み込み継続
-                return false;
+            for (String line : response) {
+                Event::Data event = Event::parseEvent(line.c_str(), line.length());
+                switch (event.num) {
+                    case Event::EventNum::ReceiveBeacon:
+                        // ビーコン受信の場合は次へ
+                        log_d("Receive Beacon : %s", event.sender);
+                        this->CommunicationParameter.destIpv6Address = String(event.sender);
+                        return true;
+                        // ビーコン受信以外(スキャン完了)の場合は読み込み継続
+                    case Event::EventNum::CompleteActiveScan:
+                        log_d("Complete Active Scan... Retry");
+                        return false;
+                    default:
+                        log_d("Received Event : %02X", event.num);
+                        break;
+                }
             }
         }
     }

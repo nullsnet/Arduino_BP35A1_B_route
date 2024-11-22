@@ -78,6 +78,7 @@ class BP35A1 : public HardwareSerial {
     bool connect(const uint32_t tryTimes = 1);
     bool scanning(const uint32_t duration);
     bool waitBeacon(const uint32_t timeoutms);
+    bool waitPANA(const uint32_t timeoutms);
     bool scan(const uint32_t tryTimes = 1);
     bool configuration(const uint32_t tryTimes = 1);
 
@@ -175,6 +176,23 @@ class BP35A1 : public HardwareSerial {
             char c[16];
             snprintf(c, sizeof(c), addBlank ? "EVENT %02X " : "EVENT %02X", (uint8_t)eventNum);
             return String(c);
+        }
+        typedef struct {
+            EventNum num;
+            char sender[40];
+            uint8_t param;
+        } Data;
+        static Data parseEvent(const char *const eventChar, const size_t size) {
+            Data event;
+            memset(&event, 0, sizeof(event));
+            if (size >= 48) {
+                event.num = (EventNum)(unsigned int)strtoul(&eventChar[5], NULL, 16);
+                memcpy(&event.sender, &eventChar[9], 39);
+                if (size >= 51) {
+                    event.param = (unsigned int)strtoul(&eventChar[50], NULL, 16);
+                }
+            }
+            return event;
         }
     };
 
