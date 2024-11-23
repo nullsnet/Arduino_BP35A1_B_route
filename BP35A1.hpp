@@ -1,58 +1,13 @@
 #pragma once
 
+#include "ErxUdp.hpp"
+#include "Event.hpp"
 #include "esp32-hal-log.h"
 #include <HardwareSerial.h>
 #include <vector>
 
 class BP35A1 : public HardwareSerial {
   public:
-    class ErxUdp {
-      private:
-        std::vector<String> split(const char *src, const char *del) {
-            std::vector<String> result;
-            std::vector<char> vtxt(strlen(src) + 1, '\0');
-            char *txt = &vtxt[0];
-            strcpy(txt, src);
-            char *t = strtok(txt, del);
-
-            if (strlen(t) != 0) {
-                result.push_back(t);
-            }
-
-            while (t != NULL) {
-                t = strtok(NULL, del);
-                if (t != NULL) {
-                    result.push_back(t);
-                }
-            }
-            return result;
-        }
-
-      public:
-        String senderIpv6;
-        String destIpv6;
-        uint16_t senderPort;
-        uint16_t destPort;
-        String senderMac;
-        bool secured;
-        uint16_t length;
-        String payload;
-        ErxUdp() {};
-        explicit ErxUdp(String erxUdpData) {
-            std::vector<String> result = split(erxUdpData.c_str(), " ");
-            if (result.size() == 9) {
-                this->senderIpv6 = result[1];
-                this->destIpv6   = result[2];
-                this->senderPort = strtol(result[3].c_str(), NULL, 16);
-                this->destPort   = strtol(result[4].c_str(), NULL, 16);
-                this->senderMac  = result[5];
-                this->secured    = strtol(result[6].c_str(), NULL, 16);
-                this->length     = strtol(result[7].c_str(), NULL, 16);
-                this->payload    = result[8];
-            }
-        };
-    };
-
     /// @brief Wi-SUNホスト接続状態
     enum class SkStatus : uint8_t {
         uninitialized, // 未初期化
@@ -77,8 +32,7 @@ class BP35A1 : public HardwareSerial {
     bool initialize(const uint32_t tryTimes = 1);
     bool connect(const uint32_t tryTimes = 1);
     bool scanning(const uint32_t duration);
-    bool waitBeacon(const uint32_t timeoutms);
-    bool waitPANA(const uint32_t timeoutms);
+    bool waitEvent(std::vector<Event::Callback> callback, const uint32_t timeoutms);
     bool scan(const uint32_t tryTimes = 1);
     bool configuration(const uint32_t tryTimes = 1);
 
@@ -152,48 +106,36 @@ class BP35A1 : public HardwareSerial {
         connected,
     } connectStatus = ConnectStatus::uninitialized;
 
-    struct Event {
-        enum class EventNum : uint8_t {
-            ReceiveNS                           = 0x01,
-            ReceiveNA                           = 0x02,
-            ReceiveEchoRequest                  = 0x05,
-            CompleteEdScan                      = 0x1F,
-            ReceiveBeacon                       = 0x20,
-            CompleteUdpSending                  = 0x21,
-            CompleteActiveScan                  = 0x22,
-            FailedPANA                          = 0x24,
-            SuccessPANA                         = 0x25,
-            ReceiveSettionDisconnect            = 0x26,
-            SuccessPANASettionDisconnect        = 0x27,
-            TimeoutPANASettionDisconnectRequest = 0x28,
-            EndSettionLifetime                  = 0x29,
-            ErrorARIB108SendingTime             = 0x32,
-            ReleaseARIB108SendingTime           = 0x33,
-        } eventNum;
-        explicit Event(enum EventNum eventNum)
-            : eventNum(eventNum) {}
-        String toString(bool addBlank = true) {
-            char c[16];
-            snprintf(c, sizeof(c), addBlank ? "EVENT %02X " : "EVENT %02X", (uint8_t)eventNum);
-            return String(c);
-        }
-        typedef struct {
-            EventNum num;
-            char sender[40];
-            uint8_t param;
-        } Data;
-        static Data parseEvent(const char *const eventChar, const size_t size) {
-            Data event;
-            memset(&event, 0, sizeof(event));
-            if (size >= 48) {
-                event.num = (EventNum)(unsigned int)strtoul(&eventChar[5], NULL, 16);
-                memcpy(&event.sender, &eventChar[9], 39);
-                if (size >= 51) {
-                    event.param = (unsigned int)strtoul(&eventChar[50], NULL, 16);
-                }
-            }
-            return event;
-        }
+    const std::vector<Event::Callback> eventCallback = {
+        {
+            .type     = Event::Type::SuccessPANA,
+            .callback = [](const Event *const event) {
+                log_d("Success PANA");
+                return Event::CallbackResult::Success;
+            },
+        },
+        {
+            .type     = Event::Type::FailedPANA,
+            .callback = [](const Event *const event) {
+                log_d("Failed PANA... Retry");
+                return Event::CallbackResult::Failed;
+            },
+        },
+        {
+            .type     = Event::Type::ReceiveBeacon,
+            .callback = [&](const Event *const event) {
+                log_d("Receive Beacon : %s", event->sender);
+                this->CommunicationParameter.destIpv6Address = String(event->sender);
+                return Event::CallbackResult::Success;
+            },
+        },
+        {
+            .type     = Event::Type::CompleteActiveScan,
+            .callback = [](const Event *const event) {
+                log_d("Complete Active Scan... Retry");
+                return Event::CallbackResult::Failed;
+            },
+        },
     };
 
     struct EventStatus {

@@ -7,10 +7,7 @@ bool BP35A1::setRegister(const VirtualRegister::VirtualRegisterNum registerNum, 
 }
 
 BP35A1::BP35A1(String ID, String Password, int uart_nr)
-    : HardwareSerial(uart_nr) {
-    this->WPassword = Password;
-    this->WID       = ID;
-}
+    : HardwareSerial(uart_nr), WPassword(Password), WID(ID) {}
 
 void BP35A1::setStatusChangeCallback(void (*callback)(SkStatus)) {
     this->callback = callback;
@@ -71,23 +68,22 @@ bool BP35A1::initialize(const uint32_t tryTimes) {
     return this->skStatus == SkStatus::connected;
 }
 
-bool BP35A1::waitPANA(const uint32_t timeoutms) {
+bool BP35A1::waitEvent(std::vector<Event::Callback> callback, const uint32_t timeoutms) {
     std::vector<String> response;
     String terminator = "EVENT";
     while (1) {
         response.clear();
         if (this->waitResponse(&response, 0, &terminator, timeoutms)) {
             for (String line : response) {
-                Event::Data event = Event::parseEvent(line.c_str(), line.length());
-                switch (event.num) {
-                    case Event::EventNum::SuccessPANA:
-                        log_d("Success PANA");
+                Event event    = Event(line.c_str(), line.length());
+                event.callback = callback;
+                switch (event.doEvent()) {
+                    case Event::CallbackResult::Success:
                         return true;
-                    case Event::EventNum::FailedPANA:
-                        log_d("Failed PANA... Retry");
+                    case Event::CallbackResult::Failed:
                         return false;
                     default:
-                        log_d("Received Event : %02X", event.num);
+                        log_d("Received Event : %02X", event.type);
                         break;
                 }
             }
@@ -128,7 +124,7 @@ bool BP35A1::connect(const uint32_t tryTimes) {
                 break;
             case ConnectStatus::waitSuccessPANA:
                 log_d("Connect status waitSuccessPANA.");
-                this->connectStatus = this->waitPANA(100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
+                this->connectStatus = this->waitEvent(this->eventCallback, 100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
                 break;
         }
         if (this->connectStatus == ConnectStatus::connected) {
@@ -157,33 +153,6 @@ bool BP35A1::scanning(const uint32_t duration) {
     return this->returnOk();
 }
 
-bool BP35A1::waitBeacon(const uint32_t timeoutms) {
-    std::vector<String> response;
-    String terminator = "EVENT";
-    while (1) {
-        response.clear();
-        if (this->waitResponse(&response, 0, &terminator, timeoutms)) {
-            for (String line : response) {
-                Event::Data event = Event::parseEvent(line.c_str(), line.length());
-                switch (event.num) {
-                    case Event::EventNum::ReceiveBeacon:
-                        // ビーコン受信の場合は次へ
-                        log_d("Receive Beacon : %s", event.sender);
-                        this->CommunicationParameter.destIpv6Address = String(event.sender);
-                        return true;
-                        // ビーコン受信以外(スキャン完了)の場合は読み込み継続
-                    case Event::EventNum::CompleteActiveScan:
-                        log_d("Complete Active Scan... Retry");
-                        return false;
-                    default:
-                        log_d("Received Event : %02X", event.num);
-                        break;
-                }
-            }
-        }
-    }
-}
-
 bool BP35A1::scan(const uint32_t tryTimes) {
     uint32_t retryCount         = 0;
     static int scanRetryCounter = 0;
@@ -199,7 +168,7 @@ bool BP35A1::scan(const uint32_t tryTimes) {
                 break;
             case ScanStatus::waitBeacon:
                 log_d("Scan status waitBeacon.");
-                if (this->waitBeacon(scanRetryCounter * 10000)) {
+                if (this->waitEvent(this->eventCallback, scanRetryCounter * 10000)) {
                     this->scanStatus = ScanStatus::checkScanResult;
                 } else {
                     scanRetryCounter++;
@@ -377,7 +346,7 @@ bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint3
 
     // send check
     std::vector<String> retval;
-    String terminator = Event(Event::EventNum::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address;
+    String terminator = Event(Event::Type::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address;
     if (this->waitResponse(&retval, 0, &terminator, timeoutms, delayms)) {
         if (retval.back().indexOf(terminator + EventStatus(EventStatus::EventStatusNum::SuccessUdpSend).toString()) > -1) {
             return true;
@@ -386,7 +355,7 @@ bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint3
     return false;
 }
 
-BP35A1::ErxUdp BP35A1::getUdpData(const uint32_t delayms, const uint32_t timeoutms) {
+ErxUdp BP35A1::getUdpData(const uint32_t delayms, const uint32_t timeoutms) {
     std::vector<String> response;
     String terminator = "ERXUDP " + this->CommunicationParameter.ipv6Address;
     if (this->waitResponse(&response, 0, &terminator, timeoutms, delayms)) {
