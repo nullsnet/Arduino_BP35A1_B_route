@@ -32,7 +32,7 @@ class BP35A1 : public HardwareSerial {
     bool initialize(const uint32_t tryTimes = 1);
     bool connect(const uint32_t tryTimes = 1);
     bool scanning(const uint32_t duration);
-    bool waitEvent(std::vector<Event::Callback> callback, const uint32_t timeoutms);
+    bool waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
     bool scan(const uint32_t tryTimes = 1);
     bool configuration(const uint32_t tryTimes = 1);
 
@@ -106,7 +106,7 @@ class BP35A1 : public HardwareSerial {
         connected,
     } connectStatus = ConnectStatus::uninitialized;
 
-    const std::vector<Event::Callback> eventCallback = {
+    const std::vector<Event::Callback> panaEventCallback = {
         {
             .type     = Event::Type::SuccessPANA,
             .callback = [](const Event *const event) {
@@ -121,6 +121,8 @@ class BP35A1 : public HardwareSerial {
                 return Event::CallbackResult::Failed;
             },
         },
+    };
+    const std::vector<Event::Callback> beaconEventCallback = {
         {
             .type     = Event::Type::ReceiveBeacon,
             .callback = [&](const Event *const event) {
@@ -137,69 +139,32 @@ class BP35A1 : public HardwareSerial {
             },
         },
     };
-
-    struct EventStatus {
-        enum class EventStatusNum : uint8_t {
-            SuccessUdpSend       = 0x00,
-            FailedUdpSend        = 0x01,
-            NeighborSolicitation = 0x02,
-        } eventStatusNum;
-        explicit EventStatus(enum EventStatusNum eventStatusNum)
-            : eventStatusNum(eventStatusNum) {}
-        String toString(bool addBlank = true) {
-            char c[16];
-            snprintf(c, sizeof(c), addBlank ? " %02X" : "%02X", (uint8_t)eventStatusNum);
-            return String(c);
-        }
+    const std::vector<Event::Callback> udpSendEventCallback = {
+        {
+            .type     = Event::Type::CompleteUdpSending,
+            .callback = [](const Event *const event) {
+                return event->parameter == Event::Parameter::SuccessUdpSend ? Event::CallbackResult::Success : Event::CallbackResult::Failed;
+            },
+        },
     };
 
-    struct VirtualRegister {
-        enum class VirtualRegisterNum : uint8_t {
-            ChannelNumber          = 0x02,
-            PanId                  = 0x03,
-            FrameCounter           = 0x07,
-            PairingId              = 0x0A,
-            AnswerBeaconRequest    = 0x15,
-            PanaSessionLifeTime    = 0x16,
-            AutoReauthentication   = 0x17,
-            MacBroadcastEncryption = 0xA0,
-            IcmpEcho               = 0xA1,
-            LimitSendtime          = 0xFB,
-            CumulativeSendingTime  = 0xFD,
-            EchoBack               = 0xFE,
-            AutoLoad               = 0xFF,
-        } virtualRegisterNum;
-        explicit VirtualRegister(enum VirtualRegisterNum virtualRegisterNum)
-            : virtualRegisterNum(virtualRegisterNum) {}
-        String toString() {
-            char c[16];
-            snprintf(c, sizeof(c), "S%X", (uint8_t)virtualRegisterNum);
-            return String(c);
-        }
+    enum class RegisterNum : uint8_t {
+        ChannelNumber          = 0x02,
+        PanId                  = 0x03,
+        FrameCounter           = 0x07,
+        PairingId              = 0x0A,
+        AnswerBeaconRequest    = 0x15,
+        PanaSessionLifeTime    = 0x16,
+        AutoReauthentication   = 0x17,
+        MacBroadcastEncryption = 0xA0,
+        IcmpEcho               = 0xA1,
+        LimitSendtime          = 0xFB,
+        CumulativeSendingTime  = 0xFD,
+        EchoBack               = 0xFE,
+        AutoLoad               = 0xFF,
     };
 
-    class skSendTo {
-      public:
-        struct {
-            uint8_t udpHandle = 0x01;
-            String destIpv6;
-            uint16_t destPort = 0x0E1A;
-            uint8_t secured   = 0x01;
-            uint16_t length;
-        } header;
-        skSendTo();
-        skSendTo(uint16_t length, String dest) {
-            this->header.length   = length;
-            this->header.destIpv6 = dest;
-        };
-        String getSendString() {
-            char sendData[256];
-            snprintf(sendData, sizeof(sendData), "SKSENDTO %d %s %04X %d %04X ", this->header.udpHandle, this->header.destIpv6.c_str(), this->header.destPort, this->header.secured, this->header.length);
-            return String(sendData);
-        };
-    };
-
-    bool setRegister(const VirtualRegister::VirtualRegisterNum registerNum, const String &arg);
+    bool setRegister(const RegisterNum registerNum, const String &arg);
     size_t execCommand(const SKCmd skCmdNum, const String *const arg = nullptr);
     size_t execCommand(const String &s);
     bool returnOk(const uint32_t timeoutms = 5000, const uint32_t delayms = 100);

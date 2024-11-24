@@ -1,8 +1,9 @@
 #include "BP35A1.hpp"
+#include "SkSendTo.hpp"
 
-bool BP35A1::setRegister(const VirtualRegister::VirtualRegisterNum registerNum, const String &arg) {
+bool BP35A1::setRegister(const RegisterNum registerNum, const String &arg) {
     char c[32];
-    snprintf(c, sizeof(c), "SKSREG %s %s", VirtualRegister(registerNum).toString().c_str(), arg.c_str());
+    snprintf(c, sizeof(c), "SKSREG S%X %s", registerNum, arg.c_str());
     return this->execCommand(c) > 0 && this->returnOk() ? true : false;
 }
 
@@ -32,10 +33,10 @@ bool BP35A1::initialize(const uint32_t tryTimes) {
         if (this->callback != NULL) {
             this->callback(this->skStatus);
         }
+        log_d("Initialize status : %d", this->skStatus);
         switch (this->skStatus) {
             case SkStatus::uninitialized:
             default:
-                log_d("Sk status uninitialized.");
                 if (this->configuration(1)) {
                     this->skStatus = SkStatus::scanning;
                 } else {
@@ -43,7 +44,6 @@ bool BP35A1::initialize(const uint32_t tryTimes) {
                 }
                 break;
             case SkStatus::scanning:
-                log_d("Sk status scanning.");
                 if (this->scan(1)) {
                     this->skStatus = SkStatus::connecting;
                 } else {
@@ -51,7 +51,6 @@ bool BP35A1::initialize(const uint32_t tryTimes) {
                 }
                 break;
             case SkStatus::connecting:
-                log_d("Sk status connecting.");
                 if (this->connect(1)) {
                     this->skStatus = SkStatus::connected;
                 } else {
@@ -60,7 +59,6 @@ bool BP35A1::initialize(const uint32_t tryTimes) {
                 break;
         }
         if (this->skStatus == SkStatus::connected) {
-            log_d("Sk status connected.");
             this->printParam();
             break;
         }
@@ -68,22 +66,22 @@ bool BP35A1::initialize(const uint32_t tryTimes) {
     return this->skStatus == SkStatus::connected;
 }
 
-bool BP35A1::waitEvent(std::vector<Event::Callback> callback, const uint32_t timeoutms) {
+bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms, const uint32_t delayms) {
     std::vector<String> response;
     String terminator = "EVENT";
     while (1) {
         response.clear();
-        if (this->waitResponse(&response, 0, &terminator, timeoutms)) {
+        if (this->waitResponse(&response, 0, &terminator, timeoutms, delayms)) {
             for (String line : response) {
-                Event event    = Event(line.c_str(), line.length());
-                event.callback = callback;
-                switch (event.doEvent()) {
+                Event receivedEvent = Event(line.c_str(), line.length());
+                switch (receivedEvent.doEvent(callback)) {
                     case Event::CallbackResult::Success:
                         return true;
                     case Event::CallbackResult::Failed:
                         return false;
                     default:
-                        log_d("Received Event : %02X", event.type);
+                        if (receivedEvent.type != Event::Type::Invalid)
+                            log_d("Received Event : %02X", receivedEvent.type);
                         break;
                 }
             }
@@ -94,37 +92,33 @@ bool BP35A1::waitEvent(std::vector<Event::Callback> callback, const uint32_t tim
 bool BP35A1::connect(const uint32_t tryTimes) {
     uint32_t retryCount = 0;
     while (retryCount < tryTimes) {
+        log_d("Connect status : %d", this->connectStatus);
         switch (this->connectStatus) {
             case ConnectStatus::uninitialized:
-            default:
-                log_d("Connect status uninitialized.");
-                {
-                    this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
-                    std::vector<String> response;
-                    if (this->waitResponse(&response, 1)) {
-                        this->CommunicationParameter.ipv6Address = response.front();
-                        this->CommunicationParameter.ipv6Address.trim();
-                        this->connectStatus = ConnectStatus::getIpv6;
-                    }
+            default: {
+                this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
+                std::vector<String> response;
+                if (this->waitResponse(&response, 1)) {
+                    this->CommunicationParameter.ipv6Address = response.front();
+                    this->CommunicationParameter.ipv6Address.trim();
+                    this->connectStatus = ConnectStatus::getIpv6;
                 }
+            }
                 retryCount++;
                 break;
             case ConnectStatus::getIpv6:
-                log_d("Connect status getIpv6.");
-                if (this->setRegister(VirtualRegister::VirtualRegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->setRegister(VirtualRegister::VirtualRegisterNum::PanId, this->CommunicationParameter.panId)) {
+                if (this->setRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->setRegister(RegisterNum::PanId, this->CommunicationParameter.panId)) {
                     this->connectStatus = ConnectStatus::setComunicationParam;
                 } else {
                     this->connectStatus = ConnectStatus::uninitialized;
                 }
                 break;
             case ConnectStatus::setComunicationParam:
-                log_d("Connect status setComunicationParam.");
                 this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address);
                 this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
                 break;
             case ConnectStatus::waitSuccessPANA:
-                log_d("Connect status waitSuccessPANA.");
-                this->connectStatus = this->waitEvent(this->eventCallback, 100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
+                this->connectStatus = this->waitEvent(&this->panaEventCallback, 100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
                 break;
         }
         if (this->connectStatus == ConnectStatus::connected) {
@@ -157,18 +151,17 @@ bool BP35A1::scan(const uint32_t tryTimes) {
     uint32_t retryCount         = 0;
     static int scanRetryCounter = 0;
     while (retryCount < tryTimes) {
+        log_d("Scan status : %d", this->scanStatus);
         switch (this->scanStatus) {
             case ScanStatus::uninitialized:
             default:
-                log_d("Scan status uninitialized.");
                 if (this->scanning(scanRetryCounter + 3)) {
                     this->scanStatus = ScanStatus::waitBeacon;
                 }
                 retryCount++;
                 break;
             case ScanStatus::waitBeacon:
-                log_d("Scan status waitBeacon.");
-                if (this->waitEvent(this->eventCallback, scanRetryCounter * 10000)) {
+                if (this->waitEvent(&this->beaconEventCallback, scanRetryCounter * 10000)) {
                     this->scanStatus = ScanStatus::checkScanResult;
                 } else {
                     scanRetryCounter++;
@@ -176,7 +169,6 @@ bool BP35A1::scan(const uint32_t tryTimes) {
                 }
                 break;
             case ScanStatus::checkScanResult:
-                log_d("Scan status checkScanResult.");
                 this->scanStatus = this->parseScanResult() ? ScanStatus::scanned : ScanStatus::uninitialized;
                 break;
         }
@@ -190,50 +182,41 @@ bool BP35A1::scan(const uint32_t tryTimes) {
 bool BP35A1::configuration(const uint32_t tryTimes) {
     uint32_t retryCount = 0;
     while (retryCount < tryTimes) {
+        log_d("Initialize status : %d", this->initializeStatus);
         switch (this->initializeStatus) {
             case InitializeStatus::uninitialized:
-            default:
-                log_d("Initialize status uninitialized.");
-                {
-                    this->execCommand(SKCmd::terminateSKStack);
-                    this->execCommand(SKCmd::resetSKStack);
-                    this->execCommand(SKCmd::disableEcho);
-                    this->execCommand(SKCmd::getSKStackVersion);
-                    std::vector<String> response;
-                    String terminator = "EVER";
-                    if (waitResponse(&response, 0, &terminator)) {
-                        this->eVer             = response.front();
-                        this->initializeStatus = InitializeStatus::getSkVer;
-                    }
+            default: {
+                this->execCommand(SKCmd::terminateSKStack);
+                this->execCommand(SKCmd::resetSKStack);
+                this->execCommand(SKCmd::disableEcho);
+                this->execCommand(SKCmd::getSKStackVersion);
+                std::vector<String> response;
+                String terminator = "EVER";
+                if (waitResponse(&response, 0, &terminator)) {
+                    this->eVer             = response.front();
+                    this->initializeStatus = InitializeStatus::getSkVer;
                 }
+            }
                 retryCount++;
                 break;
             case InitializeStatus::getSkVer:
-                log_d("Initialize status getSkVer.");
                 this->execCommand(SKCmd::setSKStackPassword, &this->WPassword);
                 this->initializeStatus = this->returnOk() ? InitializeStatus::setSkSetpwd : InitializeStatus::uninitialized;
                 break;
             case InitializeStatus::setSkSetpwd:
-                log_d("Initialize status setSkSetpwd.");
                 this->execCommand(SKCmd::setSKStackID, &this->WID);
                 this->initializeStatus = this->returnOk() ? InitializeStatus::checkDataFormat : InitializeStatus::uninitialized;
                 break;
-            case InitializeStatus::checkDataFormat:
-                log_d("Initialize status checkDataFormat.");
-                {
-                    const String terminator = "OK 01";
-                    this->execCommand(SKCmd::readOpt);
-                    this->initializeStatus = this->waitResponse(nullptr, 0, &terminator) ? InitializeStatus::initialized : InitializeStatus::setDataFormat;
-                }
-                break;
-            case InitializeStatus::setDataFormat:
-                log_d("Initialize status setDataFormat.");
-                {
-                    const String arg = "01";
-                    this->execCommand(SKCmd::writeOpt, &arg);
-                    this->initializeStatus = this->returnOk() ? InitializeStatus::initialized : InitializeStatus::uninitialized;
-                }
-                break;
+            case InitializeStatus::checkDataFormat: {
+                const String terminator = "OK 01";
+                this->execCommand(SKCmd::readOpt);
+                this->initializeStatus = this->waitResponse(nullptr, 0, &terminator) ? InitializeStatus::initialized : InitializeStatus::setDataFormat;
+            } break;
+            case InitializeStatus::setDataFormat: {
+                const String arg = "01";
+                this->execCommand(SKCmd::writeOpt, &arg);
+                this->initializeStatus = this->returnOk() ? InitializeStatus::initialized : InitializeStatus::uninitialized;
+            } break;
         }
         if (this->initializeStatus == InitializeStatus::initialized) {
             break;
@@ -345,14 +328,7 @@ bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint3
     log_d(">> %s%s", udpData.getSendString().c_str(), logBuffer);
 
     // send check
-    std::vector<String> retval;
-    String terminator = Event(Event::Type::CompleteUdpSending).toString() + this->CommunicationParameter.ipv6Address;
-    if (this->waitResponse(&retval, 0, &terminator, timeoutms, delayms)) {
-        if (retval.back().indexOf(terminator + EventStatus(EventStatus::EventStatusNum::SuccessUdpSend).toString()) > -1) {
-            return true;
-        }
-    }
-    return false;
+    return this->waitEvent(&this->udpSendEventCallback, timeoutms, delayms);
 }
 
 ErxUdp BP35A1::getUdpData(const uint32_t delayms, const uint32_t timeoutms) {

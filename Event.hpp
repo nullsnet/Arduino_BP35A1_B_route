@@ -1,11 +1,7 @@
 #pragma once
 
-#include <WString.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <vector>
 #include <functional>
+#include <vector>
 
 class Event {
   public:
@@ -25,43 +21,74 @@ class Event {
         EndSettionLifetime                  = 0x29,
         ErrorARIB108SendingTime             = 0x32,
         ReleaseARIB108SendingTime           = 0x33,
+        Invalid                             = 0xFF,
     };
+
+    enum class Parameter : uint8_t {
+        SuccessUdpSend       = 0x00,
+        FailedUdpSend        = 0x01,
+        NeighborSolicitation = 0x02,
+        Invalid              = 0xFF,
+    };
+
     enum class CallbackResult {
         Success,
         Failed,
         NotMatch,
     };
 
-    struct Callback{
+    struct Callback {
         Type type;
         std::function<Event::CallbackResult(const Event *const)> callback;
     };
 
-    Type type;
-    char sender[40];
-    uint8_t parameter;
+    Type type           = Type::Invalid;
+    char sender[40]     = {'\0'};
+    Parameter parameter = Parameter::Invalid;
     std::vector<Callback> callback;
 
-    Event(const Type type)
-        : type(type) {}
+    Event() {}
+
+    Event(const Type initType)
+        : type(initType) {}
+
+    Event(const Type initType, const char *const initSender, const size_t size)
+        : type(initType) {
+        if (size < sizeof(sender)) {
+            memcpy(this->sender, initSender, size);
+        }
+    }
+
+    Event(const Type initType, const char *const initSender, const size_t size, const Parameter initParameter)
+        : type(initType), parameter(initParameter) {
+        Event(initType, initSender, size);
+    }
 
     Event(const char *const eventChar, const size_t size) {
-        if (size >= 48) {
-            type = (Type)(unsigned int)strtoul(&eventChar[5], NULL, 16);
+        if (size >= 48 && (memcmp(eventChar, "EVENT", 5) == 0)) {
+            this->type = (Type)(unsigned int)strtoul(&eventChar[5], NULL, 16);
             memcpy(&sender, &eventChar[9], 39);
             if (size >= 51) {
-                parameter = (unsigned int)strtoul(&eventChar[50], NULL, 16);
+                this->parameter = (Parameter)(unsigned int)strtoul(&eventChar[50], NULL, 16);
             }
         }
     }
-    String toString(bool addBlank = true) {
-        char c[16];
-        snprintf(c, sizeof(c), addBlank ? "EVENT %02X " : "EVENT %02X", (uint8_t)type);
+    String toString() {
+        char c[52] = "EVENT";
+        if (this->type != Type::Invalid) {
+            std::snprintf(&c[5], (sizeof(c) - 5), " %02X", (uint8_t)type);
+            if (strnlen(this->sender, sizeof(this->sender)) != 0) {
+                std::snprintf(&c[8], (sizeof(c) - 8), " %s", sender);
+                if (this->parameter != Parameter ::Invalid) {
+                    std::snprintf(&c[48], (sizeof(c) - 48), " %02X", (uint8_t)parameter);
+                }
+            }
+        }
         return String(c);
     }
 
-    CallbackResult doEvent() {
-        for (Callback &cb : this->callback) {
+    CallbackResult doEvent(const std::vector<Event::Callback> *const callback) {
+        for (const Callback &cb : *callback) {
             if (this->type == cb.type) {
                 return cb.callback(this);
             }
