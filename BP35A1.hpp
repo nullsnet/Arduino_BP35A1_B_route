@@ -36,7 +36,7 @@ class BP35A1 : public HardwareSerial {
     bool waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
     bool scan(const uint32_t tryTimes = 1);
     bool configuration(const uint32_t tryTimes = 1);
-    void loop(bool (*sender)(void), bool (*receiver)(void), const uint32_t timeoutms, const uint32_t delayms);
+    bool connectionLoop(const uint32_t timeoutms, const uint32_t delayms);
 
   private:
     String eVer;

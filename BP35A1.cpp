@@ -23,8 +23,11 @@ size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
     return ret;
 }
 
-void BP35A1::loop(bool (*sender)(void), bool (*receiver)(void), const uint32_t timeoutms, const uint32_t delayms) {
+bool BP35A1::connectionLoop(const uint32_t timeoutms, const uint32_t delayms) {
     static int scanRetryCounter = 0;
+    if (this->callback != NULL) {
+        this->callback(this->skStatus);
+    }
     switch (this->skStatus) {
         case SkStatus::uninitialized:
         default:
@@ -63,7 +66,7 @@ void BP35A1::loop(bool (*sender)(void), bool (*receiver)(void), const uint32_t t
                 default: {
                     this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
                     std::vector<String> response;
-                    if (this->waitResponse(&response, 1)) {
+                    if (this->waitResponse(&response, 1) && response.front().length() == 40) {
                         this->CommunicationParameter.ipv6Address = response.front();
                         this->CommunicationParameter.ipv6Address.trim();
                         this->connectStatus = ConnectStatus::getIpv6;
@@ -89,23 +92,9 @@ void BP35A1::loop(bool (*sender)(void), bool (*receiver)(void), const uint32_t t
             }
             break;
         case SkStatus::connected:
-            switch (this->communicationStatus) {
-                case CommunicationStatus::unconnected:
-                case CommunicationStatus::getUdpData:
-                default: {
-                    if (sender()) {
-                        this->communicationStatus = CommunicationStatus::sendUdpData;
-                    }
-                } break;
-                case CommunicationStatus::sendUdpData:
-                    if (receiver()) {
-                        this->communicationStatus = CommunicationStatus::getUdpData;
-                    }
-                    break;
-            }
-            break;
+            return true;
     }
-    return;
+    return false;
 }
 
 /// @brief 初期化
@@ -181,7 +170,7 @@ bool BP35A1::connect(const uint32_t tryTimes) {
             default: {
                 this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
                 std::vector<String> response;
-                if (this->waitResponse(&response, 1)) {
+                if (this->waitResponse(&response, 1) && response.front().length() == 40) {
                     this->CommunicationParameter.ipv6Address = response.front();
                     this->CommunicationParameter.ipv6Address.trim();
                     this->connectStatus = ConnectStatus::getIpv6;
