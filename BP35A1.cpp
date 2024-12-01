@@ -3,8 +3,8 @@
 
 bool BP35A1::setRegister(const RegisterNum registerNum, const String &arg) {
     char c[32];
-    snprintf(c, sizeof(c), "SKSREG S%X %s", registerNum, arg.c_str());
-    return this->execCommand(c) > 0 && this->returnOk() ? true : false;
+    snprintf(c, sizeof(c), "S%X %s", registerNum, arg.c_str());
+    return this->execCommand(SKCmd::setRegister, &String(c)) > 0 && this->returnOk() ? true : false;
 }
 
 BP35A1::BP35A1(String ID, String Password, int uart_nr)
@@ -15,12 +15,9 @@ void BP35A1::setStatusChangeCallback(void (*callback)(SkStatus)) {
 }
 
 size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
-    return arg == nullptr ? this->execCommand(this->skCmd[skCmdNum]) : this->execCommand(this->skCmd[skCmdNum] + " " + *arg);
-}
-
-size_t BP35A1::execCommand(const String &s) {
-    log_d(">> %s", s.c_str());
-    size_t ret = this->println(s);
+    String command = arg == nullptr ? this->skCmd[skCmdNum] : this->skCmd[skCmdNum] + " " + *arg;
+    log_d(">> %s", command.c_str());
+    size_t ret = this->println(command);
     this->flush();
     return ret;
 }

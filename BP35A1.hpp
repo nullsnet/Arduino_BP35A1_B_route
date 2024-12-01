@@ -53,6 +53,7 @@ class BP35A1 : public HardwareSerial {
     } CommunicationParameter;
 
     const std::vector<String> skCmd = {
+        "SKSREG",
         "SKSREG SFE 0",
         "SKVER",
         "SKTERM",
@@ -67,6 +68,7 @@ class BP35A1 : public HardwareSerial {
     };
 
     enum SKCmd {
+        setRegister,        // レジスタ設定
         disableEcho,        // エコーバック無効化
         getSKStackVersion,  // SKSTACK IP のファームウェアバージョンを表示します,
         terminateSKStack,   // 現在確立している PANA セッションの終了を要請します,
@@ -166,7 +168,6 @@ class BP35A1 : public HardwareSerial {
 
     bool setRegister(const RegisterNum registerNum, const String &arg);
     size_t execCommand(const SKCmd skCmdNum, const String *const arg = nullptr);
-    size_t execCommand(const String &s);
     bool returnOk(const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
     bool waitResponse(std::vector<String> *const response = nullptr, const uint32_t lines = 0, const String *const terminator = nullptr, const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
     void discardBuffer(uint32_t delayms = 1000);
