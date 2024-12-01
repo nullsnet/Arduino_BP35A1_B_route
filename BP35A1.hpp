@@ -14,6 +14,7 @@ class BP35A1 : public HardwareSerial {
         scanning,      // スキャン中
         connecting,    // 接続中
         connected,     // 接続完了
+        waitResponse,  // 応答待ち
     };
 
     enum class ScanMode : uint8_t {
@@ -35,6 +36,7 @@ class BP35A1 : public HardwareSerial {
     bool waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
     bool scan(const uint32_t tryTimes = 1);
     bool configuration(const uint32_t tryTimes = 1);
+    void loop(bool (*sender)(void), bool (*receiver)(void), const uint32_t timeoutms, const uint32_t delayms);
 
   private:
     String eVer;
@@ -108,6 +110,12 @@ class BP35A1 : public HardwareSerial {
         connected,
     } connectStatus = ConnectStatus::uninitialized;
 
+    enum class CommunicationStatus {
+        unconnected,
+        sendUdpData,
+        getUdpData,
+    } communicationStatus = CommunicationStatus::unconnected;
+
     const std::vector<Event::Callback> panaEventCallback = {
         {
             .type     = Event::Type::SuccessPANA,
@@ -166,7 +174,7 @@ class BP35A1 : public HardwareSerial {
         AutoLoad               = 0xFF,
     };
 
-    bool setRegister(const RegisterNum registerNum, const String &arg);
+    bool settingRegister(const RegisterNum registerNum, const String &arg);
     size_t execCommand(const SKCmd skCmdNum, const String *const arg = nullptr);
     bool returnOk(const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
     bool waitResponse(std::vector<String> *const response = nullptr, const uint32_t lines = 0, const String *const terminator = nullptr, const uint32_t timeoutms = 5000, const uint32_t delayms = 100);

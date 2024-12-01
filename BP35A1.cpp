@@ -1,10 +1,11 @@
 #include "BP35A1.hpp"
 #include "SkSendTo.hpp"
 
-bool BP35A1::setRegister(const RegisterNum registerNum, const String &arg) {
+bool BP35A1::settingRegister(const RegisterNum registerNum, const String &arg) {
     char c[32];
     snprintf(c, sizeof(c), "S%X %s", registerNum, arg.c_str());
-    return this->execCommand(SKCmd::setRegister, &String(c)) > 0 && this->returnOk() ? true : false;
+    String s = String(c);
+    return this->execCommand(SKCmd::setRegister, &s) > 0 && this->returnOk() ? true : false;
 }
 
 BP35A1::BP35A1(String ID, String Password, int uart_nr)
@@ -20,6 +21,91 @@ size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
     size_t ret = this->println(command);
     this->flush();
     return ret;
+}
+
+void BP35A1::loop(bool (*sender)(void), bool (*receiver)(void), const uint32_t timeoutms, const uint32_t delayms) {
+    static int scanRetryCounter = 0;
+    switch (this->skStatus) {
+        case SkStatus::uninitialized:
+        default:
+            if (this->configuration(1)) {
+                this->skStatus = SkStatus::scanning;
+            }
+            break;
+        case SkStatus::scanning: {
+            switch (this->scanStatus) {
+                case ScanStatus::uninitialized:
+                default:
+                    if (this->scanning(scanRetryCounter + 3)) {
+                        this->scanStatus = ScanStatus::waitBeacon;
+                    }
+                    break;
+                case ScanStatus::waitBeacon:
+                    if (this->waitEvent(&this->beaconEventCallback, timeoutms, delayms)) {
+                        this->scanStatus = ScanStatus::checkScanResult;
+                    } else {
+                        scanRetryCounter++;
+                        this->scanStatus = ScanStatus::uninitialized;
+                    }
+                    break;
+                case ScanStatus::checkScanResult:
+                    this->scanStatus = this->parseScanResult() ? ScanStatus::scanned : ScanStatus::uninitialized;
+                    break;
+            }
+            if (this->scanStatus == ScanStatus::scanned) {
+                this->skStatus = SkStatus::connecting;
+            }
+            break;
+        }
+        case SkStatus::connecting:
+            switch (this->connectStatus) {
+                case ConnectStatus::uninitialized:
+                default: {
+                    this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
+                    std::vector<String> response;
+                    if (this->waitResponse(&response, 1)) {
+                        this->CommunicationParameter.ipv6Address = response.front();
+                        this->CommunicationParameter.ipv6Address.trim();
+                        this->connectStatus = ConnectStatus::getIpv6;
+                    }
+                } break;
+                case ConnectStatus::getIpv6:
+                    if (this->settingRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->settingRegister(RegisterNum::PanId, this->CommunicationParameter.panId)) {
+                        this->connectStatus = ConnectStatus::setComunicationParam;
+                    } else {
+                        this->connectStatus = ConnectStatus::uninitialized;
+                    }
+                    break;
+                case ConnectStatus::setComunicationParam:
+                    this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address);
+                    this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
+                    break;
+                case ConnectStatus::waitSuccessPANA:
+                    this->connectStatus = this->waitEvent(&this->panaEventCallback, 100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
+                    break;
+            }
+            if (this->connectStatus == ConnectStatus::connected) {
+                this->skStatus = SkStatus::connected;
+            }
+            break;
+        case SkStatus::connected:
+            switch (this->communicationStatus) {
+                case CommunicationStatus::unconnected:
+                case CommunicationStatus::getUdpData:
+                default: {
+                    if (sender()) {
+                        this->communicationStatus = CommunicationStatus::sendUdpData;
+                    }
+                } break;
+                case CommunicationStatus::sendUdpData:
+                    if (receiver()) {
+                        this->communicationStatus = CommunicationStatus::getUdpData;
+                    }
+                    break;
+            }
+            break;
+    }
+    return;
 }
 
 /// @brief 初期化
@@ -104,7 +190,7 @@ bool BP35A1::connect(const uint32_t tryTimes) {
                 retryCount++;
                 break;
             case ConnectStatus::getIpv6:
-                if (this->setRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->setRegister(RegisterNum::PanId, this->CommunicationParameter.panId)) {
+                if (this->settingRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->settingRegister(RegisterNum::PanId, this->CommunicationParameter.panId)) {
                     this->connectStatus = ConnectStatus::setComunicationParam;
                 } else {
                     this->connectStatus = ConnectStatus::uninitialized;
