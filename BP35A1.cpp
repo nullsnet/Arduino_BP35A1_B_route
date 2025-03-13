@@ -15,6 +15,14 @@ void BP35A1::setStatusChangeCallback(void (*callback)(SkStatus)) {
     this->callback = callback;
 }
 
+BP35A1::SkStatus BP35A1::getSkStatus() {
+    return this->skStatus;
+}
+
+void BP35A1::resetSkStatus() {
+    this->skStatus = SkStatus::uninitialized;
+}
+
 size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
     String command = arg == nullptr ? this->skCmd[skCmdNum] : this->skCmd[skCmdNum] + " " + *arg;
     log_d(">> %s", command.c_str());
@@ -84,7 +92,7 @@ bool BP35A1::connectionLoop(const uint32_t timeoutms, const uint32_t delayms) {
                     this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
                     break;
                 case ConnectStatus::waitSuccessPANA:
-                    this->connectStatus = this->waitEvent(&this->panaEventCallback, 100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
+                    this->connectStatus = this->waitEvent(&this->panaEventCallback) ? ConnectStatus::connected : ConnectStatus::uninitialized;
                     break;
             }
             if (this->connectStatus == ConnectStatus::connected) {
@@ -99,9 +107,9 @@ bool BP35A1::connectionLoop(const uint32_t timeoutms, const uint32_t delayms) {
 
 /// @brief 初期化
 /// @details Wi-SUNアダプタと接続して通信可能な状態にする
-bool BP35A1::initialize(const uint32_t tryTimes) {
-    uint32_t retryCount = 0;
-    while (retryCount < tryTimes) {
+bool BP35A1::initialize(const uint32_t retryLimit) {
+    uint32_t retry = 0;
+    while (retry < retryLimit) {
         if (this->callback != NULL) {
             this->callback(this->skStatus);
         }
@@ -112,21 +120,21 @@ bool BP35A1::initialize(const uint32_t tryTimes) {
                 if (this->configuration(1)) {
                     this->skStatus = SkStatus::scanning;
                 } else {
-                    retryCount++;
+                    retry++;
                 }
                 break;
             case SkStatus::scanning:
                 if (this->scan(1)) {
                     this->skStatus = SkStatus::connecting;
                 } else {
-                    retryCount++;
+                    retry++;
                 }
                 break;
             case SkStatus::connecting:
                 if (this->connect(1)) {
                     this->skStatus = SkStatus::connected;
                 } else {
-                    retryCount++;
+                    retry++;
                 }
                 break;
         }
@@ -138,10 +146,11 @@ bool BP35A1::initialize(const uint32_t tryTimes) {
     return this->skStatus == SkStatus::connected;
 }
 
-bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms, const uint32_t delayms) {
+bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms, const uint32_t delayms, const uint32_t retryLimit) {
     std::vector<String> response;
     String terminator = "EVENT";
-    while (1) {
+    uint32_t retry    = 0;
+    while (retry < retryLimit) {
         response.clear();
         if (this->waitResponse(&response, 0, &terminator, timeoutms, delayms)) {
             for (String line : response) {
@@ -158,12 +167,14 @@ bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const
                 }
             }
         }
+        retry++;
     }
+    return false;
 }
 
-bool BP35A1::connect(const uint32_t tryTimes) {
-    uint32_t retryCount = 0;
-    while (retryCount < tryTimes) {
+bool BP35A1::connect(const uint32_t retryLimit) {
+    uint32_t retry = 0;
+    while (retry < retryLimit) {
         log_d("Connect status : %d", this->connectStatus);
         switch (this->connectStatus) {
             case ConnectStatus::uninitialized:
@@ -176,7 +187,7 @@ bool BP35A1::connect(const uint32_t tryTimes) {
                     this->connectStatus = ConnectStatus::getIpv6;
                 }
             }
-                retryCount++;
+                retry++;
                 break;
             case ConnectStatus::getIpv6:
                 if (this->settingRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->settingRegister(RegisterNum::PanId, this->CommunicationParameter.panId)) {
@@ -190,7 +201,7 @@ bool BP35A1::connect(const uint32_t tryTimes) {
                 this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
                 break;
             case ConnectStatus::waitSuccessPANA:
-                this->connectStatus = this->waitEvent(&this->panaEventCallback, 100000) ? ConnectStatus::connected : ConnectStatus::uninitialized;
+                this->connectStatus = this->waitEvent(&this->panaEventCallback) ? ConnectStatus::connected : ConnectStatus::uninitialized;
                 break;
         }
         if (this->connectStatus == ConnectStatus::connected) {
@@ -213,16 +224,16 @@ void BP35A1::printParam() {
 
 bool BP35A1::scanning(const uint32_t duration) {
     char s[16];
-    snprintf(s, sizeof(s), "%d %X %d", (uint8_t)this->scanMode, this->scanChannelMask, duration);
+    snprintf(s, sizeof(s), "%d %X %X", (uint8_t)this->scanMode, this->scanChannelMask, duration);
     String arg = String(s);
     this->execCommand(SKCmd::scanSKStack, &arg);
     return this->returnOk();
 }
 
-bool BP35A1::scan(const uint32_t tryTimes) {
-    uint32_t retryCount         = 0;
+bool BP35A1::scan(const uint32_t retryLimit) {
+    uint32_t retry         = 0;
     static int scanRetryCounter = 0;
-    while (retryCount < tryTimes) {
+    while (retry < retryLimit) {
         log_d("Scan status : %d", this->scanStatus);
         switch (this->scanStatus) {
             case ScanStatus::uninitialized:
@@ -230,7 +241,7 @@ bool BP35A1::scan(const uint32_t tryTimes) {
                 if (this->scanning(scanRetryCounter + 3)) {
                     this->scanStatus = ScanStatus::waitBeacon;
                 }
-                retryCount++;
+                retry++;
                 break;
             case ScanStatus::waitBeacon:
                 if (this->waitEvent(&this->beaconEventCallback, scanRetryCounter * 10000)) {
@@ -251,9 +262,9 @@ bool BP35A1::scan(const uint32_t tryTimes) {
     return this->scanStatus == ScanStatus::scanned;
 }
 
-bool BP35A1::configuration(const uint32_t tryTimes) {
-    uint32_t retryCount = 0;
-    while (retryCount < tryTimes) {
+bool BP35A1::configuration(const uint32_t retryLimit) {
+    uint32_t retry = 0;
+    while (retry < retryLimit) {
         log_d("Initialize status : %d", this->initializeStatus);
         switch (this->initializeStatus) {
             case InitializeStatus::uninitialized:
@@ -269,7 +280,7 @@ bool BP35A1::configuration(const uint32_t tryTimes) {
                     this->initializeStatus = InitializeStatus::getSkVer;
                 }
             }
-                retryCount++;
+                retry++;
                 break;
             case InitializeStatus::getSkVer:
                 this->execCommand(SKCmd::setSKStackPassword, &this->WPassword);
@@ -354,7 +365,7 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
         timeout += delayms;
         delay(delayms);
     }
-    log_d("Timeout");
+    log_d("Timeout timeout:%d linecounter:%d timeoutms:%d delayms:%d", timeout, linecounter, timeoutms, delayms);
     return false;
 }
 
@@ -384,7 +395,7 @@ bool BP35A1::parseScanResult() {
     }
 }
 
-bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t delayms, const uint32_t timeoutms) {
+bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t timeoutms, const uint32_t delayms) {
     // send request
     skSendTo udpData = skSendTo(length, this->CommunicationParameter.ipv6Address);
     this->print(udpData.getSendString());
@@ -403,7 +414,7 @@ bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint3
     return this->waitEvent(&this->udpSendEventCallback, timeoutms, delayms);
 }
 
-ErxUdp BP35A1::getUdpData(const uint32_t delayms, const uint32_t timeoutms) {
+ErxUdp BP35A1::getUdpData(const uint32_t timeoutms, const uint32_t delayms) {
     std::vector<String> response;
     String terminator = "ERXUDP " + this->CommunicationParameter.ipv6Address;
     if (this->waitResponse(&response, 0, &terminator, timeoutms, delayms)) {

@@ -25,18 +25,23 @@ class BP35A1 : public HardwareSerial {
     unsigned int scanChannelMask = 0xFFFFFFFF;
     void setStatusChangeCallback(void (*callback)(SkStatus));
 
-    bool sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t delayms = 100, const uint32_t timeoutms = 3000);
-    ErxUdp getUdpData(const uint32_t delayms = 100, const uint32_t timeoutms = 3000);
-    std::vector<uint8_t> getPayload(const uint8_t dataType, const uint32_t delayms = 100, const uint32_t timeoutms = 3000);
+    static const uint32_t defaultTimeoutms = 5000;
+    static const uint32_t defaultDelayms   = 100;
+
+    bool sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
+    ErxUdp getUdpData(const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
+    std::vector<uint8_t> getPayload(const uint8_t dataType, const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
     BP35A1(String ID, String Password, int uart_nr = 1);
     unsigned int scanRetryCount = 9;
-    bool initialize(const uint32_t tryTimes = 1);
-    bool connect(const uint32_t tryTimes = 1);
+    bool initialize(const uint32_t retryLimit = 1);
+    bool connect(const uint32_t retryLimit = 1);
     bool scanning(const uint32_t duration);
-    bool waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
-    bool scan(const uint32_t tryTimes = 1);
-    bool configuration(const uint32_t tryTimes = 1);
-    bool connectionLoop(const uint32_t timeoutms, const uint32_t delayms);
+    bool waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms, const uint32_t retryLimit = 10);
+    bool scan(const uint32_t retryLimit = 1);
+    bool configuration(const uint32_t retryLimit = 1);
+    bool connectionLoop(const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
+    SkStatus getSkStatus();
+    void resetSkStatus();
 
   private:
     String eVer;
@@ -176,9 +181,9 @@ class BP35A1 : public HardwareSerial {
 
     bool settingRegister(const RegisterNum registerNum, const String &arg);
     size_t execCommand(const SKCmd skCmdNum, const String *const arg = nullptr);
-    bool returnOk(const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
-    bool waitResponse(std::vector<String> *const response = nullptr, const uint32_t lines = 0, const String *const terminator = nullptr, const uint32_t timeoutms = 5000, const uint32_t delayms = 100);
-    void discardBuffer(uint32_t delayms = 1000);
+    bool returnOk(const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
+    bool waitResponse(std::vector<String> *const response = nullptr, const uint32_t lines = 0, const String *const terminator = nullptr, const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
+    void discardBuffer(uint32_t delayms = defaultDelayms);
     bool parseScanResult();
     void printParam();
 };
