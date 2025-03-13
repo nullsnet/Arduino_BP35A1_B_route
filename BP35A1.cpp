@@ -143,6 +143,7 @@ bool BP35A1::initialize(const uint32_t retryLimit) {
             break;
         }
     }
+    this->callback(this->skStatus);
     return this->skStatus == SkStatus::connected;
 }
 
