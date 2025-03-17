@@ -113,7 +113,7 @@ bool BP35A1::initialize(const uint32_t retryLimit) {
         if (this->callback != NULL) {
             this->callback(this->skStatus);
         }
-        log_d("Initialize status : %d", this->skStatus);
+        log_i("Initialize status : %d", this->skStatus);
         switch (this->skStatus) {
             case SkStatus::uninitialized:
             default:
@@ -163,7 +163,7 @@ bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const
                         return false;
                     default:
                         if (receivedEvent.type != Event::Type::Invalid)
-                            log_d("Received Event : %02X", receivedEvent.type);
+                            log_i("Received Event : %02X", receivedEvent.type);
                         break;
                 }
             }
@@ -176,7 +176,7 @@ bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const
 bool BP35A1::connect(const uint32_t retryLimit) {
     uint32_t retry = 0;
     while (retry < retryLimit) {
-        log_d("Connect status : %d", this->connectStatus);
+        log_i("Connect status : %d", this->connectStatus);
         switch (this->connectStatus) {
             case ConnectStatus::uninitialized:
             default: {
@@ -213,14 +213,14 @@ bool BP35A1::connect(const uint32_t retryLimit) {
 }
 
 void BP35A1::printParam() {
-    log_d("BP35A1 Version: %s", this->eVer.c_str());
-    log_d("MAC: %s", this->CommunicationParameter.macAddress.c_str());
-    log_d("Channel: %s", this->CommunicationParameter.channel.c_str());
-    log_d("PanID %s", this->CommunicationParameter.panId.c_str());
-    log_d("MAC %s", this->CommunicationParameter.macAddress.c_str());
-    log_d("IPv6 %s", this->CommunicationParameter.ipv6Address.c_str());
-    log_d("dest IPv6 %s", this->CommunicationParameter.destIpv6Address.c_str());
-    log_d("BP35A1 %s", this->eVer.c_str());
+    log_i("BP35A1 Version: %s", this->eVer.c_str());
+    log_i("MAC: %s", this->CommunicationParameter.macAddress.c_str());
+    log_i("Channel: %s", this->CommunicationParameter.channel.c_str());
+    log_i("PanID %s", this->CommunicationParameter.panId.c_str());
+    log_i("MAC %s", this->CommunicationParameter.macAddress.c_str());
+    log_i("IPv6 %s", this->CommunicationParameter.ipv6Address.c_str());
+    log_i("dest IPv6 %s", this->CommunicationParameter.destIpv6Address.c_str());
+    log_i("BP35A1 %s", this->eVer.c_str());
 }
 
 bool BP35A1::scanning(const uint32_t duration) {
@@ -235,7 +235,7 @@ bool BP35A1::scan(const uint32_t retryLimit) {
     uint32_t retry         = 0;
     static int scanRetryCounter = 0;
     while (retry < retryLimit) {
-        log_d("Scan status : %d", this->scanStatus);
+        log_i("Scan status : %d", this->scanStatus);
         switch (this->scanStatus) {
             case ScanStatus::uninitialized:
             default:
@@ -266,7 +266,7 @@ bool BP35A1::scan(const uint32_t retryLimit) {
 bool BP35A1::configuration(const uint32_t retryLimit) {
     uint32_t retry = 0;
     while (retry < retryLimit) {
-        log_d("Initialize status : %d", this->initializeStatus);
+        log_i("Initialize status : %d", this->initializeStatus);
         switch (this->initializeStatus) {
             case InitializeStatus::uninitialized:
             default: {
@@ -354,7 +354,7 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
                 } else {
                     // 何も指定がない場合はFAIL / OKチェック
                     if (line.indexOf("FAIL ER") > -1) {
-                        log_d("Command execute error.");
+                        log_w("Command execute error.");
                         this->discardBuffer();
                         return false;
                     } else if (line.indexOf("OK") > -1) {
@@ -366,7 +366,7 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
         timeout += delayms;
         delay(delayms);
     }
-    log_d("Timeout timeout:%d linecounter:%d timeoutms:%d delayms:%d", timeout, linecounter, timeoutms, delayms);
+    log_w("Timeout timeout:%d linecounter:%d timeoutms:%d delayms:%d", timeout, linecounter, timeoutms, delayms);
     return false;
 }
 
