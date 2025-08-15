@@ -1,15 +1,16 @@
 #include "BP35A1.hpp"
 #include "SkSendTo.hpp"
+#include <Arduino.h>
 
 bool BP35A1::settingRegister(const RegisterNum registerNum, const String &arg) {
     char c[32];
-    snprintf(c, sizeof(c), "S%X %s", registerNum, arg.c_str());
+    snprintf(c, sizeof(c), "S%X %s", (uint8_t)registerNum, arg.c_str());
     String s = String(c);
     return this->execCommand(SKCmd::setRegister, &s) > 0 && this->returnOk() ? true : false;
 }
 
-BP35A1::BP35A1(String ID, String Password, int uart_nr)
-    : HardwareSerial(uart_nr), WPassword(Password), WID(ID) {}
+BP35A1::BP35A1(String ID, String Password, ISerialIO &serial)
+    : serial_(serial), WPassword(Password), WID(ID) {}
 
 void BP35A1::setStatusChangeCallback(void (*callback)(SkStatus)) {
     this->callback = callback;
@@ -25,9 +26,9 @@ void BP35A1::resetSkStatus() {
 
 size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
     String command = arg == nullptr ? this->skCmd[skCmdNum] : this->skCmd[skCmdNum] + " " + *arg;
-    log_d(">> %s", command.c_str());
-    size_t ret = this->println(command);
-    this->flush();
+    ESP_LOGD(TAG, ">> %s", command.c_str());
+    size_t ret = this->serial_.println(command);
+    this->serial_.flush();
     return ret;
 }
 
@@ -113,7 +114,7 @@ bool BP35A1::initialize(const uint32_t retryLimit) {
         if (this->callback != NULL) {
             this->callback(this->skStatus);
         }
-        log_i("Initialize status : %d", this->skStatus);
+        ESP_LOGI(TAG, "Initialize status : %d", this->skStatus);
         switch (this->skStatus) {
             case SkStatus::uninitialized:
             default:
@@ -163,7 +164,7 @@ bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const
                         return false;
                     default:
                         if (receivedEvent.type != Event::Type::Invalid)
-                            log_i("Received Event : %02X", receivedEvent.type);
+                            ESP_LOGI(TAG, "Received Event : %02X", receivedEvent.type);
                         break;
                 }
             }
@@ -176,7 +177,7 @@ bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const
 bool BP35A1::connect(const uint32_t retryLimit) {
     uint32_t retry = 0;
     while (retry < retryLimit) {
-        log_i("Connect status : %d", this->connectStatus);
+        ESP_LOGI(TAG, "Connect status : %d", this->connectStatus);
         switch (this->connectStatus) {
             case ConnectStatus::uninitialized:
             default: {
@@ -213,29 +214,29 @@ bool BP35A1::connect(const uint32_t retryLimit) {
 }
 
 void BP35A1::printParam() {
-    log_i("BP35A1 Version: %s", this->eVer.c_str());
-    log_i("MAC: %s", this->CommunicationParameter.macAddress.c_str());
-    log_i("Channel: %s", this->CommunicationParameter.channel.c_str());
-    log_i("PanID %s", this->CommunicationParameter.panId.c_str());
-    log_i("MAC %s", this->CommunicationParameter.macAddress.c_str());
-    log_i("IPv6 %s", this->CommunicationParameter.ipv6Address.c_str());
-    log_i("dest IPv6 %s", this->CommunicationParameter.destIpv6Address.c_str());
-    log_i("BP35A1 %s", this->eVer.c_str());
+    ESP_LOGI(TAG, "BP35A1 Version: %s", this->eVer.c_str());
+    ESP_LOGI(TAG, "MAC: %s", this->CommunicationParameter.macAddress.c_str());
+    ESP_LOGI(TAG, "Channel: %s", this->CommunicationParameter.channel.c_str());
+    ESP_LOGI(TAG, "PanID %s", this->CommunicationParameter.panId.c_str());
+    ESP_LOGI(TAG, "MAC %s", this->CommunicationParameter.macAddress.c_str());
+    ESP_LOGI(TAG, "IPv6 %s", this->CommunicationParameter.ipv6Address.c_str());
+    ESP_LOGI(TAG, "dest IPv6 %s", this->CommunicationParameter.destIpv6Address.c_str());
+    ESP_LOGI(TAG, "BP35A1 %s", this->eVer.c_str());
 }
 
 bool BP35A1::scanning(const uint32_t duration) {
     char s[16];
-    snprintf(s, sizeof(s), "%d %X %X", (uint8_t)this->scanMode, this->scanChannelMask, duration);
+    snprintf(s, sizeof(s), "%d %X %lX", (uint8_t)this->scanMode, this->scanChannelMask, duration);
     String arg = String(s);
     this->execCommand(SKCmd::scanSKStack, &arg);
     return this->returnOk();
 }
 
 bool BP35A1::scan(const uint32_t retryLimit) {
-    uint32_t retry         = 0;
+    uint32_t retry              = 0;
     static int scanRetryCounter = 0;
     while (retry < retryLimit) {
-        log_i("Scan status : %d", this->scanStatus);
+        ESP_LOGI(TAG, "Scan status : %d", this->scanStatus);
         switch (this->scanStatus) {
             case ScanStatus::uninitialized:
             default:
@@ -266,7 +267,7 @@ bool BP35A1::scan(const uint32_t retryLimit) {
 bool BP35A1::configuration(const uint32_t retryLimit) {
     uint32_t retry = 0;
     while (retry < retryLimit) {
-        log_i("Initialize status : %d", this->initializeStatus);
+        ESP_LOGI(TAG, "Initialize status : %d", this->initializeStatus);
         switch (this->initializeStatus) {
             case InitializeStatus::uninitialized:
             default: {
@@ -311,8 +312,8 @@ bool BP35A1::configuration(const uint32_t retryLimit) {
 
 void BP35A1::discardBuffer(const uint32_t delayms) {
     delay(delayms);
-    while (this->available()) {
-        this->read();
+    while (this->serial_.available()) {
+        this->serial_.read();
     }
 }
 
@@ -331,10 +332,10 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
     uint32_t timeout     = 0;
     uint32_t linecounter = 0;
     while (timeoutms == 0 || timeout < timeoutms) {
-        while (this->available()) {
+        while (this->serial_.available()) {
             // 1行読み込み
-            String line = this->readStringUntil('\n');
-            log_d("<< %s", line.c_str());
+            String line = this->serial_.readStringUntil('\n');
+            ESP_LOGD(TAG, "<< %s", line.c_str());
             // response指定時は結果を格納
             if (response != nullptr) {
                 response->push_back(line);
@@ -354,7 +355,7 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
                 } else {
                     // 何も指定がない場合はFAIL / OKチェック
                     if (line.indexOf("FAIL ER") > -1) {
-                        log_w("Command execute error.");
+                        ESP_LOGW(TAG, "Command execute error.");
                         this->discardBuffer();
                         return false;
                     } else if (line.indexOf("OK") > -1) {
@@ -366,7 +367,7 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
         timeout += delayms;
         delay(delayms);
     }
-    log_w("Timeout timeout:%d linecounter:%d timeoutms:%d delayms:%d", timeout, linecounter, timeoutms, delayms);
+    ESP_LOGW(TAG, "Timeout timeout:%d linecounter:%d timeoutms:%d delayms:%d", timeout, linecounter, timeoutms, delayms);
     return false;
 }
 
@@ -399,9 +400,9 @@ bool BP35A1::parseScanResult() {
 bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t timeoutms, const uint32_t delayms) {
     // send request
     skSendTo udpData = skSendTo(length, this->CommunicationParameter.ipv6Address);
-    this->print(udpData.getSendString());
-    this->write(data, length);
-    this->print("\r\n");
+    this->serial_.print(udpData.getSendString());
+    this->serial_.write(data, length);
+    this->serial_.print("\r\n");
 
     // dump log
     char logBuffer[length * 2 + 1];
@@ -409,7 +410,7 @@ bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint3
     for (size_t i = 0; i < length; i++) {
         snprintf(&logBuffer[i * 2], sizeof(logBuffer) - (i * 2), "%02X", data[i]);
     }
-    log_d(">> %s%s", udpData.getSendString().c_str(), logBuffer);
+    ESP_LOGD(TAG, ">> %s%s", udpData.getSendString().c_str(), logBuffer);
 
     // send check
     return this->waitEvent(&this->udpSendEventCallback, timeoutms, delayms);

@@ -2,11 +2,11 @@
 
 #include "ErxUdp.hpp"
 #include "Event.hpp"
+#include "ISerialIO.h"
 #include "esp32-hal-log.h"
-#include <HardwareSerial.h>
 #include <vector>
 
-class BP35A1 : public HardwareSerial {
+class BP35A1 {
   public:
     /// @brief Wi-SUNホスト接続状態
     enum class SkStatus : uint8_t {
@@ -31,7 +31,7 @@ class BP35A1 : public HardwareSerial {
     bool sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
     ErxUdp getUdpData(const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
     std::vector<uint8_t> getPayload(const uint8_t dataType, const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
-    BP35A1(String ID, String Password, int uart_nr = 1);
+    BP35A1(String ID, String Password, ISerialIO &serial);
     unsigned int scanRetryCount = 9;
     bool initialize(const uint32_t retryLimit = 1);
     bool connect(const uint32_t retryLimit = 1);
@@ -44,6 +44,8 @@ class BP35A1 : public HardwareSerial {
     void resetSkStatus();
 
   private:
+    static constexpr const char *TAG = "bp35a1";
+    ISerialIO &serial_;
     String eVer;
     String WPassword;
     String WID;
@@ -125,14 +127,14 @@ class BP35A1 : public HardwareSerial {
         {
             .type     = Event::Type::SuccessPANA,
             .callback = [](const Event *const event) {
-                log_d("Success PANA");
+                ESP_LOGD(TAG, "Success PANA");
                 return Event::CallbackResult::Success;
             },
         },
         {
             .type     = Event::Type::FailedPANA,
             .callback = [](const Event *const event) {
-                log_d("Failed PANA... Retry");
+                ESP_LOGD(TAG, "Failed PANA... Retry");
                 return Event::CallbackResult::Failed;
             },
         },
@@ -141,7 +143,7 @@ class BP35A1 : public HardwareSerial {
         {
             .type     = Event::Type::ReceiveBeacon,
             .callback = [&](const Event *const event) {
-                log_d("Receive Beacon : %s", event->sender);
+                ESP_LOGD(TAG, "Receive Beacon : %s", event->sender);
                 this->CommunicationParameter.destIpv6Address = String(event->sender);
                 return Event::CallbackResult::Success;
             },
@@ -149,7 +151,7 @@ class BP35A1 : public HardwareSerial {
         {
             .type     = Event::Type::CompleteActiveScan,
             .callback = [](const Event *const event) {
-                log_d("Complete Active Scan... Retry");
+                ESP_LOGD(TAG, "Complete Active Scan... Retry");
                 return Event::CallbackResult::Failed;
             },
         },

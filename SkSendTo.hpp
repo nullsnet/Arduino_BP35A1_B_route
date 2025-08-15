@@ -6,11 +6,11 @@
 
 class skSendTo {
   public:
-    uint8_t udpHandle = 0x01;
+    uint16_t length;
     String destIpv6;
+    uint8_t udpHandle = 0x01;
     uint16_t destPort = 0x0E1A;
     uint8_t secured   = 0x01;
-    uint16_t length;
     skSendTo();
     skSendTo(uint16_t length, String dest)
         : length(length), destIpv6(dest) {};

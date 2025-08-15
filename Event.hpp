@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdio>
 #include <functional>
 #include <vector>
 
@@ -76,11 +77,11 @@ class Event {
     String toString() {
         char c[52] = "EVENT";
         if (this->type != Type::Invalid) {
-            std::snprintf(&c[5], (sizeof(c) - 5), " %02X", (uint8_t)type);
+            snprintf(&c[5], (sizeof(c) - 5), " %02X", (uint8_t)type);
             if (strnlen(this->sender, sizeof(this->sender)) != 0) {
-                std::snprintf(&c[8], (sizeof(c) - 8), " %s", sender);
+                snprintf(&c[8], (sizeof(c) - 8), " %s", sender);
                 if (this->parameter != Parameter ::Invalid) {
-                    std::snprintf(&c[48], (sizeof(c) - 48), " %02X", (uint8_t)parameter);
+                    snprintf(&c[48], (sizeof(c) - 48), " %02X", (uint8_t)parameter);
                 }
             }
         }
