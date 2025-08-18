@@ -2,26 +2,26 @@
 #include "SkSendTo.hpp"
 #include <Arduino.h>
 
-bool BP35A1::settingRegister(const RegisterNum registerNum, const String &arg) {
+size_t BP35A1::settingRegister(const RegisterNum registerNum, const String &arg) {
     char c[32];
     snprintf(c, sizeof(c), "S%X %s", (uint8_t)registerNum, arg.c_str());
     String s = String(c);
-    return this->execCommand(SKCmd::setRegister, &s) > 0 && this->returnOk() ? true : false;
+    return this->execCommand(SKCmd::setRegister, &s);
 }
 
 BP35A1::BP35A1(String ID, String Password, ISerialIO &serial)
     : serial_(serial), WPassword(Password), WID(ID) {}
 
-void BP35A1::setStatusChangeCallback(void (*callback)(SkStatus)) {
+void BP35A1::setStatusChangeCallback(void (*callback)(InitializeState)) {
     this->callback = callback;
 }
 
-BP35A1::SkStatus BP35A1::getSkStatus() {
-    return this->skStatus;
+BP35A1::InitializeState BP35A1::getInitializeState() {
+    return this->initializeState;
 }
 
-void BP35A1::resetSkStatus() {
-    this->skStatus = SkStatus::uninitialized;
+void BP35A1::resetInitializeState() {
+    this->initializeState = InitializeState::uninitialized;
 }
 
 size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
@@ -32,120 +32,32 @@ size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
     return ret;
 }
 
-bool BP35A1::connectionLoop(const uint32_t timeoutms, const uint32_t delayms) {
-    static int scanRetryCounter = 0;
-    if (this->callback != NULL) {
-        this->callback(this->skStatus);
-    }
-    switch (this->skStatus) {
-        case SkStatus::uninitialized:
-        default:
-            if (this->configuration(1)) {
-                this->skStatus = SkStatus::scanning;
-            }
-            break;
-        case SkStatus::scanning: {
-            switch (this->scanStatus) {
-                case ScanStatus::uninitialized:
-                default:
-                    if (this->scanning(scanRetryCounter + 3)) {
-                        this->scanStatus = ScanStatus::waitBeacon;
-                    }
-                    break;
-                case ScanStatus::waitBeacon:
-                    if (this->waitEvent(&this->beaconEventCallback, timeoutms, delayms)) {
-                        this->scanStatus = ScanStatus::checkScanResult;
-                    } else {
-                        scanRetryCounter++;
-                        this->scanStatus = ScanStatus::uninitialized;
-                    }
-                    break;
-                case ScanStatus::checkScanResult:
-                    this->scanStatus = this->parseScanResult() ? ScanStatus::scanned : ScanStatus::uninitialized;
-                    break;
-            }
-            if (this->scanStatus == ScanStatus::scanned) {
-                this->skStatus = SkStatus::connecting;
+template <class StateType>
+bool BP35A1::stateMachineLoop(std::vector<StateMachine<StateType>> stateMachines, StateType *const recordedState) {
+    static String rx_buffer_;
+    for (StateMachine<StateType> machine : stateMachines) {
+        if (machine.state == *recordedState) {
+            if (machine.read == false || (machine.read == true && this->serial_.available())) {
+                rx_buffer_ = this->serial_.readStringUntil('\n');
+                rx_buffer_.trim();
+                ESP_LOGD(TAG, "<< %s", rx_buffer_.c_str());
+                ESP_LOGD(TAG, "current state : %u", *recordedState);
+                *recordedState = machine.processor(rx_buffer_);
+                ESP_LOGD(TAG, "next state : %u", *recordedState);
+                rx_buffer_.clear();
             }
             break;
         }
-        case SkStatus::connecting:
-            switch (this->connectStatus) {
-                case ConnectStatus::uninitialized:
-                default: {
-                    this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
-                    std::vector<String> response;
-                    if (this->waitResponse(&response, 1) && response.front().length() == 40) {
-                        this->CommunicationParameter.ipv6Address = response.front();
-                        this->CommunicationParameter.ipv6Address.trim();
-                        this->connectStatus = ConnectStatus::getIpv6;
-                    }
-                } break;
-                case ConnectStatus::getIpv6:
-                    if (this->settingRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->settingRegister(RegisterNum::PanId, this->CommunicationParameter.panId)) {
-                        this->connectStatus = ConnectStatus::setComunicationParam;
-                    } else {
-                        this->connectStatus = ConnectStatus::uninitialized;
-                    }
-                    break;
-                case ConnectStatus::setComunicationParam:
-                    this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address);
-                    this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
-                    break;
-                case ConnectStatus::waitSuccessPANA:
-                    this->connectStatus = this->waitEvent(&this->panaEventCallback) ? ConnectStatus::connected : ConnectStatus::uninitialized;
-                    break;
-            }
-            if (this->connectStatus == ConnectStatus::connected) {
-                this->skStatus = SkStatus::connected;
-            }
-            break;
-        case SkStatus::connected:
-            return true;
     }
-    return false;
+    return *recordedState == InitializeState::ready;
 }
 
-/// @brief 初期化
-/// @details Wi-SUNアダプタと接続して通信可能な状態にする
-bool BP35A1::initialize(const uint32_t retryLimit) {
-    uint32_t retry = 0;
-    while (retry < retryLimit) {
-        if (this->callback != NULL) {
-            this->callback(this->skStatus);
-        }
-        ESP_LOGI(TAG, "Initialize status : %d", this->skStatus);
-        switch (this->skStatus) {
-            case SkStatus::uninitialized:
-            default:
-                if (this->configuration(1)) {
-                    this->skStatus = SkStatus::scanning;
-                } else {
-                    retry++;
-                }
-                break;
-            case SkStatus::scanning:
-                if (this->scan(1)) {
-                    this->skStatus = SkStatus::connecting;
-                } else {
-                    retry++;
-                }
-                break;
-            case SkStatus::connecting:
-                if (this->connect(1)) {
-                    this->skStatus = SkStatus::connected;
-                } else {
-                    retry++;
-                }
-                break;
-        }
-        if (this->skStatus == SkStatus::connected) {
-            this->printParam();
-            break;
-        }
+bool BP35A1::initializeLoop(void) {
+    const bool result = stateMachineLoop(this->initializeStateMachines, &this->initializeState);
+    if (this->callback != NULL) {
+        this->callback(this->initializeState);
     }
-    this->callback(this->skStatus);
-    return this->skStatus == SkStatus::connected;
+    return result;
 }
 
 bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms, const uint32_t delayms, const uint32_t retryLimit) {
@@ -174,154 +86,12 @@ bool BP35A1::waitEvent(const std::vector<Event::Callback> *const callback, const
     return false;
 }
 
-bool BP35A1::connect(const uint32_t retryLimit) {
-    uint32_t retry = 0;
-    while (retry < retryLimit) {
-        ESP_LOGI(TAG, "Connect status : %d", this->connectStatus);
-        switch (this->connectStatus) {
-            case ConnectStatus::uninitialized:
-            default: {
-                this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress);
-                std::vector<String> response;
-                if (this->waitResponse(&response, 1) && response.front().length() == 40) {
-                    this->CommunicationParameter.ipv6Address = response.front();
-                    this->CommunicationParameter.ipv6Address.trim();
-                    this->connectStatus = ConnectStatus::getIpv6;
-                }
-            }
-                retry++;
-                break;
-            case ConnectStatus::getIpv6:
-                if (this->settingRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) && this->settingRegister(RegisterNum::PanId, this->CommunicationParameter.panId)) {
-                    this->connectStatus = ConnectStatus::setComunicationParam;
-                } else {
-                    this->connectStatus = ConnectStatus::uninitialized;
-                }
-                break;
-            case ConnectStatus::setComunicationParam:
-                this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address);
-                this->connectStatus = this->returnOk() ? ConnectStatus::waitSuccessPANA : ConnectStatus::uninitialized;
-                break;
-            case ConnectStatus::waitSuccessPANA:
-                this->connectStatus = this->waitEvent(&this->panaEventCallback) ? ConnectStatus::connected : ConnectStatus::uninitialized;
-                break;
-        }
-        if (this->connectStatus == ConnectStatus::connected) {
-            break;
-        }
-    }
-    return this->connectStatus == ConnectStatus::connected;
-}
-
-void BP35A1::printParam() {
-    ESP_LOGI(TAG, "BP35A1 Version: %s", this->eVer.c_str());
-    ESP_LOGI(TAG, "MAC: %s", this->CommunicationParameter.macAddress.c_str());
-    ESP_LOGI(TAG, "Channel: %s", this->CommunicationParameter.channel.c_str());
-    ESP_LOGI(TAG, "PanID %s", this->CommunicationParameter.panId.c_str());
-    ESP_LOGI(TAG, "MAC %s", this->CommunicationParameter.macAddress.c_str());
-    ESP_LOGI(TAG, "IPv6 %s", this->CommunicationParameter.ipv6Address.c_str());
-    ESP_LOGI(TAG, "dest IPv6 %s", this->CommunicationParameter.destIpv6Address.c_str());
-    ESP_LOGI(TAG, "BP35A1 %s", this->eVer.c_str());
-}
-
-bool BP35A1::scanning(const uint32_t duration) {
-    char s[16];
-    snprintf(s, sizeof(s), "%d %X %lX", (uint8_t)this->scanMode, this->scanChannelMask, duration);
-    String arg = String(s);
-    this->execCommand(SKCmd::scanSKStack, &arg);
-    return this->returnOk();
-}
-
-bool BP35A1::scan(const uint32_t retryLimit) {
-    uint32_t retry              = 0;
-    static int scanRetryCounter = 0;
-    while (retry < retryLimit) {
-        ESP_LOGI(TAG, "Scan status : %d", this->scanStatus);
-        switch (this->scanStatus) {
-            case ScanStatus::uninitialized:
-            default:
-                if (this->scanning(scanRetryCounter + 3)) {
-                    this->scanStatus = ScanStatus::waitBeacon;
-                }
-                retry++;
-                break;
-            case ScanStatus::waitBeacon:
-                if (this->waitEvent(&this->beaconEventCallback, scanRetryCounter * 10000)) {
-                    this->scanStatus = ScanStatus::checkScanResult;
-                } else {
-                    scanRetryCounter++;
-                    this->scanStatus = ScanStatus::uninitialized;
-                }
-                break;
-            case ScanStatus::checkScanResult:
-                this->scanStatus = this->parseScanResult() ? ScanStatus::scanned : ScanStatus::uninitialized;
-                break;
-        }
-        if (this->scanStatus == ScanStatus::scanned) {
-            break;
-        }
-    }
-    return this->scanStatus == ScanStatus::scanned;
-}
-
-bool BP35A1::configuration(const uint32_t retryLimit) {
-    uint32_t retry = 0;
-    while (retry < retryLimit) {
-        ESP_LOGI(TAG, "Initialize status : %d", this->initializeStatus);
-        switch (this->initializeStatus) {
-            case InitializeStatus::uninitialized:
-            default: {
-                this->execCommand(SKCmd::terminateSKStack);
-                this->execCommand(SKCmd::resetSKStack);
-                this->execCommand(SKCmd::disableEcho);
-                this->execCommand(SKCmd::getSKStackVersion);
-                std::vector<String> response;
-                String terminator = "EVER";
-                if (waitResponse(&response, 0, &terminator)) {
-                    this->eVer             = response.front();
-                    this->initializeStatus = InitializeStatus::getSkVer;
-                }
-            }
-                retry++;
-                break;
-            case InitializeStatus::getSkVer:
-                this->execCommand(SKCmd::setSKStackPassword, &this->WPassword);
-                this->initializeStatus = this->returnOk() ? InitializeStatus::setSkSetpwd : InitializeStatus::uninitialized;
-                break;
-            case InitializeStatus::setSkSetpwd:
-                this->execCommand(SKCmd::setSKStackID, &this->WID);
-                this->initializeStatus = this->returnOk() ? InitializeStatus::checkDataFormat : InitializeStatus::uninitialized;
-                break;
-            case InitializeStatus::checkDataFormat: {
-                const String terminator = "OK 01";
-                this->execCommand(SKCmd::readOpt);
-                this->initializeStatus = this->waitResponse(nullptr, 0, &terminator) ? InitializeStatus::initialized : InitializeStatus::setDataFormat;
-            } break;
-            case InitializeStatus::setDataFormat: {
-                const String arg = "01";
-                this->execCommand(SKCmd::writeOpt, &arg);
-                this->initializeStatus = this->returnOk() ? InitializeStatus::initialized : InitializeStatus::uninitialized;
-            } break;
-        }
-        if (this->initializeStatus == InitializeStatus::initialized) {
-            break;
-        }
-    }
-    return this->initializeStatus == InitializeStatus::initialized;
-}
-
 void BP35A1::discardBuffer(const uint32_t delayms) {
     delay(delayms);
     while (this->serial_.available()) {
         this->serial_.read();
     }
 }
-
-bool BP35A1::returnOk(const uint32_t timeoutms, const uint32_t delayms) {
-    const String terminator = "OK";
-    return this->waitResponse(nullptr, 0, &terminator, timeoutms, delayms);
-}
-
 /// @brief レスポンス待機
 /// @param response 文字列を格納用ベクタ
 /// @param lines レスポンス行数上限
@@ -369,32 +139,6 @@ bool BP35A1::waitResponse(std::vector<String> *const response, const uint32_t li
     }
     ESP_LOGW(TAG, "Timeout timeout:%d linecounter:%d timeoutms:%d delayms:%d", timeout, linecounter, timeoutms, delayms);
     return false;
-}
-
-bool BP35A1::parseScanResult() {
-    std::vector<String> response;
-    String terminator = "PairID";
-    if (waitResponse(&response, 0, &terminator)) {
-        for (String line : response) {
-            if (line.indexOf("Channel:") > -1) {
-                this->CommunicationParameter.channel = line.substring(line.indexOf("Channel:") + 8);
-                this->CommunicationParameter.channel.trim();
-            } else if (line.indexOf("Pan ID:") > -1) {
-                this->CommunicationParameter.panId = line.substring(line.indexOf("Pan ID:") + 7);
-                this->CommunicationParameter.panId.trim();
-            } else if (line.indexOf("Addr:") > -1) {
-                this->CommunicationParameter.macAddress = line.substring(line.indexOf("Addr:") + 5);
-                this->CommunicationParameter.macAddress.trim();
-            }
-        }
-        if (this->CommunicationParameter.macAddress.isEmpty() || this->CommunicationParameter.channel.isEmpty() || this->CommunicationParameter.panId.isEmpty()) {
-            return false;
-        } else {
-            return true;
-        }
-    } else {
-        return false;
-    }
 }
 
 bool BP35A1::sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t timeoutms, const uint32_t delayms) {
