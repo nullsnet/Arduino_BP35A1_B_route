@@ -3,6 +3,7 @@
 #include "ErxUdp.hpp"
 #include "Event.hpp"
 #include "ISerialIO.h"
+#include "LowVoltageSmartElectricEnergyMeter.hpp"
 #include "esp32-hal-log.h"
 #include <vector>
 
@@ -51,29 +52,33 @@ class BP35A1 {
         skJoin,
         waitSkJoin,
         waitPana,
-        ready,
+        readyCommunication,
+        waitInitParamSuccessUdpSend,
+        waitInitParamErxudp,
+        readySmartMeter,
     } initializeState = InitializeState::uninitialized;
 
     enum class CommunicationState {
         ready,
         waitSuccessUdpSend,
+        waitErxudp,
     } communicationState = CommunicationState::ready;
 
-    unsigned int scanChannelMask = 0xFFFFFFFF;
     void setStatusChangeCallback(void (*callback)(InitializeState));
 
-    static const uint32_t defaultTimeoutms = 5000;
-    static const uint32_t defaultDelayms   = 100;
-
-    bool sendUdpData(const uint8_t *data, const uint16_t length, const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
-    ErxUdp getUdpData(const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
+    void sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property> properties);
     BP35A1(String ID, String Password, ISerialIO &serial);
     bool initializeLoop(void);
+    bool communicationLoop(void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass), CommunicationState const expectedState);
     InitializeState getInitializeState();
+    CommunicationState getCommunicationState();
     void resetInitializeState();
+    void resetCommunicationState();
 
   private:
     static constexpr const char *TAG = "bp35a1";
+    LowVoltageSmartElectricEnergyMeterClass echonet;
+    const unsigned int scanChannelMask = 0xFFFFFFFF;
 
     enum class ScanMode : uint8_t {
         EDScan,
@@ -117,7 +122,7 @@ class BP35A1 {
     struct StateMachine {
         StateType state;
         bool read;
-        std::function<StateType(const String)> processor;
+        std::function<StateType(const String, void (*const callback)(LowVoltageSmartElectricEnergyMeterClass))> processor;
     };
 
     enum class RegisterNum : uint8_t {
@@ -137,12 +142,11 @@ class BP35A1 {
     };
     size_t settingRegister(const RegisterNum registerNum, const String &arg);
     size_t execCommand(const SKCmd skCmdNum, const String *const arg = nullptr);
-    bool waitResponse(std::vector<String> *const response = nullptr, const uint32_t lines = 0, const String *const terminator = nullptr, const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms);
-    void discardBuffer(uint32_t delayms = defaultDelayms);
-    bool waitEvent(const std::vector<Event::Callback> *const callback, const uint32_t timeoutms = defaultTimeoutms, const uint32_t delayms = defaultDelayms, const uint32_t retryLimit = 10);
+    void discardBuffer(uint32_t delayms);
+    void sendUdpData(const uint8_t *data, const uint16_t length);
 
     template <class StateType>
-    bool stateMachineLoop(std::vector<StateMachine<StateType>> stateMachines, StateType *const recordedState);
+    bool stateMachineLoop(std::vector<StateMachine<StateType>> stateMachines, StateType *const recordedState, StateType const expectedState, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass));
 
     std::vector<String> splitString(const String &str, char delimiter) {
         std::vector<String> tokens;
@@ -186,7 +190,7 @@ class BP35A1 {
         {
             .state     = InitializeState::uninitialized,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 this->execCommand(SKCmd::terminateSKStack);
                 this->execCommand(SKCmd::resetSKStack);
                 discardBuffer(50);
@@ -197,7 +201,7 @@ class BP35A1 {
         {
             .state     = InitializeState::waitDisableEcho,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 static bool receivedOk   = false;
                 static bool receivedEcho = false;
                 if (line.indexOf("SKSREG") > -1) {
@@ -217,14 +221,14 @@ class BP35A1 {
         {
             .state     = InitializeState::getSKInfo,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return this->execCommand(SKCmd::getSkInfo) > 0 ? InitializeState::waitEinfo : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::waitEinfo,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 std::vector<String> tokens = splitString(line, ' ');
                 if (tokens.size() == 6 && tokens[0] == "EINFO") {
                     this->skinfo.ipv6Address  = tokens[1];
@@ -247,21 +251,21 @@ class BP35A1 {
         {
             .state     = InitializeState::waitEinfoOk,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line.indexOf("OK") > -1 ? InitializeState::getSKStackVersion : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::getSKStackVersion,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return this->execCommand(SKCmd::getSKStackVersion) > 0 ? InitializeState::waitEver : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::waitEver,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 std::vector<String> tokens = splitString(line, ' ');
                 if (tokens.size() == 2 && tokens[0] == "EVER") {
                     this->eVer = tokens[1];
@@ -276,49 +280,49 @@ class BP35A1 {
         {
             .state     = InitializeState::waitEverOk,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line.indexOf("OK") > -1 ? InitializeState::setSKStackPassword : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::setSKStackPassword,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return this->execCommand(SKCmd::setSKStackPassword, &this->WPassword) > 0 ? InitializeState::waitSetSKStackPassword : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::waitSetSKStackPassword,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line.indexOf("OK") > -1 ? InitializeState::setSKStackId : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::setSKStackId,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return this->execCommand(SKCmd::setSKStackID, &this->WID) > 0 ? InitializeState::waitSetSKStackId : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::waitSetSKStackId,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line.indexOf("OK") > -1 ? InitializeState::readOpt : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::readOpt,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return this->execCommand(SKCmd::readOpt) > 0 ? InitializeState::waitReadOpt : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::waitReadOpt,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 std::vector<String> tokens = splitString(line, ' ');
                 if (tokens.size() == 2 && tokens[0] == "OK" && tokens[1] == "01") {
                     return InitializeState::activeScanWithIE;
@@ -330,7 +334,7 @@ class BP35A1 {
         {
             .state     = InitializeState::writeOpt,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 const String arg = "01";
                 return this->execCommand(SKCmd::writeOpt, &arg) > 0 ? InitializeState::waitWriteOpt : InitializeState::uninitialized;
             },
@@ -338,14 +342,14 @@ class BP35A1 {
         {
             .state     = InitializeState::waitWriteOpt,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line.indexOf("OK") > -1 ? InitializeState::activeScanWithIE : InitializeState::uninitialized;
             },
         },
         {
             .state     = InitializeState::activeScanWithIE,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 static uint32_t duration = 3;
                 char s[16];
                 snprintf(s, sizeof(s), "%d %08X %X", (uint8_t)this->scanMode, this->scanChannelMask, duration);
@@ -358,14 +362,14 @@ class BP35A1 {
         {
             .state     = InitializeState::waitActiveScanWithIEOk,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line.indexOf("OK") > -1 ? InitializeState::waitScanEvent : InitializeState::waitActiveScanWithIEOk;
             },
         },
         {
             .state     = InitializeState::waitScanEvent,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 static bool receivedBeacon   = false;
                 static bool seceivedEpanDesc = false;
                 if (receivedBeacon == true) {
@@ -399,14 +403,14 @@ class BP35A1 {
         {
             .state     = InitializeState::waitEpanDesc,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line == "EPANDESC" ? InitializeState::waitEpanDescChannel : InitializeState::activeScanWithIE;
             },
         },
         {
             .state     = InitializeState::waitEpanDescChannel,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Channel") > -1) {
                     this->CommunicationParameter.channel = tokens[1];
@@ -421,7 +425,7 @@ class BP35A1 {
         {
             .state     = InitializeState::waitEpanDescChannelPage,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Channel Page") > -1) {
                     this->CommunicationParameter.channelPage = tokens[1];
@@ -436,7 +440,7 @@ class BP35A1 {
         {
             .state     = InitializeState::waitEpanDescPanId,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Pan ID") > -1) {
                     this->CommunicationParameter.panId = tokens[1];
@@ -451,7 +455,7 @@ class BP35A1 {
         {
             .state     = InitializeState::waitEpanDescAddr,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Addr") > -1) {
                     this->CommunicationParameter.macAddress = tokens[1];
@@ -466,7 +470,7 @@ class BP35A1 {
         {
             .state     = InitializeState::waitEpanDescLQI,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("LQI") > -1) {
                     this->CommunicationParameter.LQI = tokens[1];
@@ -481,7 +485,7 @@ class BP35A1 {
         {
             .state     = InitializeState::waitEpanDescPairId,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("PairID") > -1) {
                     this->CommunicationParameter.pairId = tokens[1];
@@ -496,14 +500,14 @@ class BP35A1 {
         {
             .state     = InitializeState::convertAddr,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress) > 0 ? InitializeState::waitConvertAddr : InitializeState::activeScanWithIE;
             },
         },
         {
             .state     = InitializeState::waitConvertAddr,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 if (line.length() == 39) {
                     this->CommunicationParameter.ipv6Address = line;
                     this->CommunicationParameter.ipv6Address.trim();
@@ -517,55 +521,55 @@ class BP35A1 {
         {
             .state     = InitializeState::setChannel,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return this->settingRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) > 0 ? InitializeState::waitSetChannel : InitializeState::activeScanWithIE;
             },
         },
         {
             .state     = InitializeState::waitSetChannel,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line.indexOf("OK") > -1 ? InitializeState::setPanId : InitializeState::activeScanWithIE;
             },
         },
         {
             .state     = InitializeState::setPanId,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return this->settingRegister(RegisterNum::PanId, this->CommunicationParameter.panId) > 0 ? InitializeState::waitSetPanId : InitializeState::activeScanWithIE;
             },
         },
         {
             .state     = InitializeState::waitSetPanId,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line.indexOf("OK") > -1 ? InitializeState::skJoin : InitializeState::activeScanWithIE;
             },
         },
         {
             .state     = InitializeState::skJoin,
             .read      = false,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address) > 0 ? InitializeState::waitSkJoin : InitializeState::activeScanWithIE;
             },
         },
         {
             .state     = InitializeState::waitSkJoin,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 return line.indexOf("OK") > -1 ? InitializeState::waitPana : InitializeState::activeScanWithIE;
             },
         },
         {
             .state     = InitializeState::waitPana,
             .read      = true,
-            .processor = [&](const String line) {
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
                 Event event = Event(line.c_str(), line.length());
                 ESP_LOGI(TAG, "Receive Event : %02X", event.type);
                 switch (event.type) {
                     case Event::Type::SuccessPANA:
                         ESP_LOGD(TAG, "Success PANA");
-                        return InitializeState::ready;
+                        return InitializeState::readyCommunication;
                     case Event::Type::FailedPANA:
                         ESP_LOGD(TAG, "Failed PANA... retry");
                         return InitializeState::convertAddr;
@@ -575,13 +579,84 @@ class BP35A1 {
                 }
             },
         },
+        {
+            .state     = InitializeState::readyCommunication,
+            .read      = false,
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
+                this->echonet.generateGetRequest(std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>({
+                    LowVoltageSmartElectricEnergyMeterClass::Property::Coefficient,
+                    LowVoltageSmartElectricEnergyMeterClass::Property::CumulativeEnergyUnit,
+                }));
+                sendUdpData(this->echonet.getRawData().data(), echonet.size());
+                return InitializeState::waitInitParamSuccessUdpSend;
+            },
+        },
+        {
+            .state     = InitializeState::waitInitParamSuccessUdpSend,
+            .read      = true,
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
+                Event event = Event(line.c_str(), line.length());
+                ESP_LOGI(TAG, "Receive Event : %02X", event.type);
+                switch (event.type) {
+                    case Event::Type::CompleteUdpSending:
+                        ESP_LOGD(TAG, "Success Send UDP");
+                        return InitializeState::waitInitParamErxudp;
+                    default:
+                        ESP_LOGD(TAG, "Unexpected Event... continue");
+                        return InitializeState::waitInitParamSuccessUdpSend;
+                }
+            },
+        },
+        {
+            .state     = InitializeState::waitInitParamErxudp,
+            .read      = true,
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
+                if (line.indexOf("ERXUDP " + this->CommunicationParameter.ipv6Address) > -1) {
+                    if (this->echonet.load(ErxUdp(line).payload.c_str()) && this->echonet.initializeParameter()) {
+                        ESP_LOGI(TAG, "ConvertCumulativeEnergyUnit : %f", this->echonet.cumulativeEnergyUnit);
+                        ESP_LOGI(TAG, "SyntheticTransformationRatio: %d", this->echonet.syntheticTransformationRatio);
+                        return InitializeState::readySmartMeter;
+                    } else {
+                        return InitializeState::readyCommunication;
+                    }
+                } else {
+                    ESP_LOGD(TAG, "Unexpected Event... continue");
+                    return InitializeState::waitInitParamErxudp;
+                }
+            },
+        },
     };
 
-    const std::vector<Event::Callback> udpSendEventCallback = {
+    const std::vector<StateMachine<CommunicationState>> communicationStateMachines = {
         {
-            .type     = Event::Type::CompleteUdpSending,
-            .callback = [](const Event *const event) {
-                return event->parameter == Event::Parameter::SuccessUdpSend ? Event::CallbackResult::Success : Event::CallbackResult::Failed;
+            .state     = CommunicationState::waitSuccessUdpSend,
+            .read      = true,
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
+                Event event = Event(line.c_str(), line.length());
+                ESP_LOGI(TAG, "Receive Event : %02X", event.type);
+                switch (event.type) {
+                    case Event::Type::CompleteUdpSending:
+                        ESP_LOGD(TAG, "Success Send UDP");
+                        return CommunicationState::waitErxudp;
+                    default:
+                        ESP_LOGD(TAG, "Unexpected Event... continue");
+                        return CommunicationState::waitSuccessUdpSend;
+                }
+            },
+        },
+        {
+            .state     = CommunicationState::waitErxudp,
+            .read      = true,
+            .processor = [&](const String line, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
+                if (line.indexOf("ERXUDP " + this->CommunicationParameter.ipv6Address) > -1) {
+                    if (callback != NULL && this->echonet.load(ErxUdp(line).payload.c_str())) {
+                        callback(this->echonet);
+                    }
+                    return CommunicationState::ready;
+                } else {
+                    ESP_LOGD(TAG, "Unexpected Event... continue");
+                    return CommunicationState::waitErxudp;
+                }
             },
         },
     };
