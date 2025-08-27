@@ -41,7 +41,7 @@ size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
 }
 
 template <class StateType>
-bool BP35A1::stateMachineLoop(std::vector<StateMachine<StateType>> stateMachines, StateType *const recordedState, StateType const expectedState, void (*const callback)(const LowVoltageSmartElectricEnergyMeterClass)) {
+bool BP35A1::stateMachineLoop(std::vector<StateMachine<StateType>> stateMachines, StateType *const recordedState, StateType const expectedState, StateMachineCallback_t const callback) {
     static String rx_buffer_;
     for (StateMachine<StateType> machine : stateMachines) {
         if (machine.state == *recordedState) {
@@ -71,7 +71,7 @@ bool BP35A1::initializeLoop(void) {
     return result;
 }
 
-bool BP35A1::communicationLoop(void (*const callback)(LowVoltageSmartElectricEnergyMeterClass), CommunicationState const expectedState) {
+bool BP35A1::communicationLoop(StateMachineCallback_t const callback, CommunicationState const expectedState) {
     return stateMachineLoop(this->communicationStateMachines, &this->communicationState, expectedState, callback);
 }
 
