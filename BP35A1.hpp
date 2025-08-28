@@ -189,7 +189,8 @@ class BP35A1 {
 
     const StateMachine<InitializeState> *getStateMachine(const InitializeState);
     const StateMachine<CommunicationState> *getStateMachine(const CommunicationState);
-
     template <class StateType>
     const StateMachine<StateType> *findStateMachine(const std::vector<StateMachine<StateType>> *const, const StateType);
+    template <class StateType>
+    StateType checkSuccessUdpSend(const String &, const StateType, const StateType);
 };

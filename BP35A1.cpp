@@ -5,6 +5,33 @@
 #define __BP35A1_expectOk(receiveOk, notReceivedOk) [this](const String &line, const StateMachineCallback_t callback) { return line.indexOf("OK") > -1 ? receiveOk : notReceivedOk; }
 
 template <class StateType>
+StateType BP35A1::checkSuccessUdpSend(const String &line, const StateType success, const StateType failed) {
+    static bool receivedOk                 = false;
+    static bool receivedCompleteUdpSending = false;
+    if (line.indexOf("OK") > -1) {
+        receivedOk = true;
+    } else {
+        const Event event = Event(line.c_str(), line.length());
+        ESP_LOGI(TAG, "Receive Event : %02X", event.type);
+        switch (event.type) {
+            case Event::Type::CompleteUdpSending:
+                ESP_LOGD(TAG, "Success Send UDP");
+                receivedCompleteUdpSending = true;
+                break;
+            default:
+                ESP_LOGD(TAG, "Unexpected Event... continue");
+                break;
+        }
+    }
+    if (receivedOk && receivedCompleteUdpSending) {
+        receivedOk = receivedCompleteUdpSending = false;
+        return success;
+    } else {
+        return failed;
+    }
+}
+
+template <class StateType>
 const BP35A1::StateMachine<StateType> *BP35A1::findStateMachine(const std::vector<BP35A1::StateMachine<StateType>> *const stateMachines, const StateType state) {
     for (const auto &machine : *stateMachines)
         if (machine.state == state)
@@ -368,16 +395,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitInitParamSuccessUdpSend,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                const Event event = Event(line.c_str(), line.length());
-                ESP_LOGI(TAG, "Receive Event : %02X", event.type);
-                switch (event.type) {
-                    case Event::Type::CompleteUdpSending:
-                        ESP_LOGD(TAG, "Success Send UDP");
-                        return InitializeState::waitInitParamErxudp;
-                    default:
-                        ESP_LOGD(TAG, "Unexpected Event... continue");
-                        return InitializeState::waitInitParamSuccessUdpSend;
-                }
+                return checkSuccessUdpSend(line, InitializeState::waitInitParamErxudp, InitializeState::waitInitParamSuccessUdpSend);
             },
         },
         {
@@ -407,29 +425,7 @@ const BP35A1::StateMachine<BP35A1::CommunicationState> *BP35A1::getStateMachine(
             .state     = CommunicationState::waitSuccessUdpSend,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                static bool receivedOk                 = false;
-                static bool receivedCompleteUdpSending = false;
-                if (line.indexOf("OK") > -1) {
-                    receivedOk = true;
-                } else {
-                    const Event event = Event(line.c_str(), line.length());
-                    ESP_LOGI(TAG, "Receive Event : %02X", event.type);
-                    switch (event.type) {
-                        case Event::Type::CompleteUdpSending:
-                            ESP_LOGD(TAG, "Success Send UDP");
-                            receivedCompleteUdpSending = true;
-                            break;
-                        default:
-                            ESP_LOGD(TAG, "Unexpected Event... continue");
-                            break;
-                    }
-                }
-                if (receivedOk && receivedCompleteUdpSending) {
-                    receivedOk = receivedCompleteUdpSending = false;
-                    return CommunicationState::waitErxudp;
-                } else {
-                    return CommunicationState::waitSuccessUdpSend;
-                }
+                return checkSuccessUdpSend(line, CommunicationState::waitErxudp, CommunicationState::waitSuccessUdpSend);
             },
         },
         {
