@@ -66,18 +66,17 @@ class BP35A1 {
 
     using StateMachineCallback_t = void (*)(const LowVoltageSmartElectricEnergyMeterClass);
 
-    void setStatusChangeCallback(void (*callback)(InitializeState));
-    void sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property> properties);
-    BP35A1(String ID, String Password, ISerialIO &serial);
+    void setStatusChangeCallback(void (*)(InitializeState));
+    void sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>);
+    BP35A1(String, String, ISerialIO &);
     bool initializeLoop(void);
-    bool communicationLoop(StateMachineCallback_t const callback, CommunicationState const expectedState);
+    bool communicationLoop(StateMachineCallback_t const, const CommunicationState);
     InitializeState getInitializeState();
     CommunicationState getCommunicationState();
     void resetInitializeState();
     void resetCommunicationState();
 
   private:
-#define __BP35A1_expectOk(receiveOk, notReceivedOk) [&](const String line, StateMachineCallback_t const callback) { return line.indexOf("OK") > -1 ? receiveOk : notReceivedOk; }
     static constexpr const char *TAG = "bp35a1";
     LowVoltageSmartElectricEnergyMeterClass echonet;
     const unsigned int scanChannelMask = 0xFFFFFFFF;
@@ -122,9 +121,9 @@ class BP35A1 {
 
     template <class StateType>
     struct StateMachine {
-        StateType state;
-        bool read;
-        std::function<StateType(const String, const StateMachineCallback_t)> processor;
+        const StateType state;
+        const bool read;
+        const std::function<StateType(const String &, const StateMachineCallback_t)> processor;
     };
 
     enum class RegisterNum : uint8_t {
@@ -142,13 +141,13 @@ class BP35A1 {
         EchoBack               = 0xFE,
         AutoLoad               = 0xFF,
     };
-    size_t settingRegister(const RegisterNum registerNum, const String &arg);
-    size_t execCommand(const SKCmd skCmdNum, const String *const arg = nullptr);
-    void discardBuffer(uint32_t delayms);
-    void sendUdpData(const uint8_t *data, const uint16_t length);
+    size_t settingRegister(const RegisterNum, const String &);
+    size_t execCommand(const SKCmd, const String *const = nullptr);
+    void discardBuffer(uint32_t);
+    void sendUdpData(const uint8_t *const, const uint16_t);
 
     template <class StateType>
-    bool stateMachineLoop(std::vector<StateMachine<StateType>> stateMachines, StateType *const recordedState, StateType const expectedState, StateMachineCallback_t const callback);
+    bool stateMachineLoop(const StateMachine<StateType> *const, StateType *const, const StateType, const StateMachineCallback_t);
 
     std::vector<String> splitString(const String &str, char delimiter) {
         std::vector<String> tokens;
@@ -188,424 +187,9 @@ class BP35A1 {
         String macAddress16;
     } skinfo;
 
-    const std::vector<StateMachine<InitializeState>> initializeStateMachines = {
-        {
-            .state     = InitializeState::uninitialized,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t callback) {
-                this->execCommand(SKCmd::terminateSKStack);
-                this->execCommand(SKCmd::resetSKStack);
-                discardBuffer(50);
-                this->execCommand(SKCmd::disableEcho);
-                return InitializeState::waitDisableEcho;
-            },
-        },
-        {
-            .state     = InitializeState::waitDisableEcho,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                static bool receivedOk   = false;
-                static bool receivedEcho = false;
-                if (line.indexOf("SKSREG") > -1) {
-                    receivedEcho = true;
-                }
-                if (line.indexOf("OK") > -1) {
-                    receivedOk = true;
-                }
-                if (receivedEcho && receivedOk) {
-                    receivedEcho = receivedOk = false;
-                    return InitializeState::getSKInfo;
-                } else {
-                    return InitializeState::waitDisableEcho;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::getSKInfo,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return this->execCommand(SKCmd::getSkInfo) > 0 ? InitializeState::waitEinfo : InitializeState::uninitialized;
-            },
-        },
-        {
-            .state     = InitializeState::waitEinfo,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                std::vector<String> tokens = splitString(line, ' ');
-                if (tokens.size() == 6 && tokens[0] == "EINFO") {
-                    this->skinfo.ipv6Address  = tokens[1];
-                    this->skinfo.macAddress64 = tokens[2];
-                    this->skinfo.channel      = tokens[3];
-                    this->skinfo.panId        = tokens[4];
-                    this->skinfo.macAddress16 = tokens[5];
-                    ESP_LOGI(TAG, "ipv6Address  : %s", this->skinfo.ipv6Address);
-                    ESP_LOGI(TAG, "macAddress64 : %s", this->skinfo.macAddress64);
-                    ESP_LOGI(TAG, "channel      : %s", this->skinfo.channel);
-                    ESP_LOGI(TAG, "panId        : %s", this->skinfo.panId);
-                    ESP_LOGI(TAG, "macAddress16 : %s", this->skinfo.macAddress16);
-                    return InitializeState::waitEinfoOk;
-                } else {
-                    ESP_LOGE(TAG, "Unexpected tokens : %d / [0] : %s", tokens.size(), tokens[0]);
-                    return InitializeState::uninitialized;
-                }
-            },
-        },
-        {.state = InitializeState::waitEinfoOk, .read = true, .processor = __BP35A1_expectOk(InitializeState::getSKStackVersion, InitializeState::uninitialized)},
-        {
-            .state     = InitializeState::getSKStackVersion,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return this->execCommand(SKCmd::getSKStackVersion) > 0 ? InitializeState::waitEver : InitializeState::uninitialized;
-            },
-        },
-        {
-            .state     = InitializeState::waitEver,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                std::vector<String> tokens = splitString(line, ' ');
-                if (tokens.size() == 2 && tokens[0] == "EVER") {
-                    this->eVer = tokens[1];
-                    ESP_LOGI(TAG, "EVER : %s", this->eVer.c_str());
-                    return InitializeState::waitEverOk;
-                } else {
-                    ESP_LOGE(TAG, "Unexpected tokens : %d / [0] : %s", tokens.size(), tokens[0]);
-                    return InitializeState::uninitialized;
-                }
-            },
-        },
-        {.state = InitializeState::waitEverOk, .read = true, .processor = __BP35A1_expectOk(InitializeState::setSKStackPassword, InitializeState::uninitialized)},
-        {
-            .state     = InitializeState::setSKStackPassword,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return this->execCommand(SKCmd::setSKStackPassword, &this->WPassword) > 0 ? InitializeState::waitSetSKStackPassword : InitializeState::uninitialized;
-            },
-        },
-        {.state = InitializeState::waitSetSKStackPassword, .read = true, .processor = __BP35A1_expectOk(InitializeState::setSKStackId, InitializeState::uninitialized)},
-        {
-            .state     = InitializeState::setSKStackId,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return this->execCommand(SKCmd::setSKStackID, &this->WID) > 0 ? InitializeState::waitSetSKStackId : InitializeState::uninitialized;
-            },
-        },
-        {.state = InitializeState::waitSetSKStackId, .read = true, .processor = __BP35A1_expectOk(InitializeState::readOpt, InitializeState::uninitialized)},
-        {
-            .state     = InitializeState::readOpt,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return this->execCommand(SKCmd::readOpt) > 0 ? InitializeState::waitReadOpt : InitializeState::uninitialized;
-            },
-        },
-        {
-            .state     = InitializeState::waitReadOpt,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                std::vector<String> tokens = splitString(line, ' ');
-                if (tokens.size() == 2 && tokens[0] == "OK" && tokens[1] == "01") {
-                    return InitializeState::activeScanWithIE;
-                } else {
-                    return InitializeState::writeOpt;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::writeOpt,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                const String arg = "01";
-                return this->execCommand(SKCmd::writeOpt, &arg) > 0 ? InitializeState::waitWriteOpt : InitializeState::uninitialized;
-            },
-        },
-        {.state = InitializeState::waitWriteOpt, .read = true, .processor = __BP35A1_expectOk(InitializeState::activeScanWithIE, InitializeState::uninitialized)},
-        {
-            .state     = InitializeState::activeScanWithIE,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                static uint32_t duration = 3;
-                char s[16];
-                snprintf(s, sizeof(s), "%d %08X %X", (uint8_t)this->scanMode, this->scanChannelMask, duration);
-                String arg = String(s);
-                this->execCommand(SKCmd::scanSKStack, &arg);
-                duration = duration < 14 ? duration + 1 : duration;
-                return InitializeState::waitActiveScanWithIEOk;
-            },
-        },
-        {.state = InitializeState::waitActiveScanWithIEOk, .read = true, .processor = __BP35A1_expectOk(InitializeState::waitScanEvent, InitializeState::waitActiveScanWithIEOk)},
-        {
-            .state     = InitializeState::waitScanEvent,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                static bool receivedBeacon   = false;
-                static bool seceivedEpanDesc = false;
-                if (receivedBeacon == true) {
-                    seceivedEpanDesc = true;
-                }
-                Event event = Event(line.c_str(), line.length());
-                ESP_LOGI(TAG, "Receive Event : %02X", event.type);
-                switch (event.type) {
-                    case Event::Type::ReceiveBeacon:
-                        ESP_LOGD(TAG, "Receive Beacon");
-                        this->CommunicationParameter.destIpv6Address = String(event.sender);
-                        ESP_LOGI(TAG, "Dest IPv6 : %s", this->CommunicationParameter.destIpv6Address.c_str());
-                        receivedBeacon = true;
-                        return InitializeState::waitEpanDesc;
-                    case Event::Type::CompleteActiveScan:
-                        if (receivedBeacon && seceivedEpanDesc) {
-                            ESP_LOGD(TAG, "Complete Active Scan, and received beacon");
-                            receivedBeacon = seceivedEpanDesc = false;
-                            return InitializeState::convertAddr;
-                        } else {
-                            ESP_LOGD(TAG, "Complete Active Scan, but not received beacon... retry");
-                            receivedBeacon = seceivedEpanDesc = false;
-                            return InitializeState::activeScanWithIE;
-                        }
-                    default:
-                        ESP_LOGD(TAG, "Unexpected Event... continue");
-                        return InitializeState::waitScanEvent;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::waitEpanDesc,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return line == "EPANDESC" ? InitializeState::waitEpanDescChannel : InitializeState::activeScanWithIE;
-            },
-        },
-        {
-            .state     = InitializeState::waitEpanDescChannel,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                std::vector<String> tokens = splitString(line, ':');
-                if (tokens.size() == 2 && tokens[0].indexOf("Channel") > -1) {
-                    this->CommunicationParameter.channel = tokens[1];
-                    this->CommunicationParameter.channel.trim();
-                    ESP_LOGI(TAG, "Channel : %s", this->CommunicationParameter.channel.c_str());
-                    return InitializeState::waitEpanDescChannelPage;
-                } else {
-                    return InitializeState::activeScanWithIE;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::waitEpanDescChannelPage,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                std::vector<String> tokens = splitString(line, ':');
-                if (tokens.size() == 2 && tokens[0].indexOf("Channel Page") > -1) {
-                    this->CommunicationParameter.channelPage = tokens[1];
-                    this->CommunicationParameter.channelPage.trim();
-                    ESP_LOGI(TAG, "ChannelPage : %s", this->CommunicationParameter.channelPage.c_str());
-                    return InitializeState::waitEpanDescPanId;
-                } else {
-                    return InitializeState::activeScanWithIE;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::waitEpanDescPanId,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                std::vector<String> tokens = splitString(line, ':');
-                if (tokens.size() == 2 && tokens[0].indexOf("Pan ID") > -1) {
-                    this->CommunicationParameter.panId = tokens[1];
-                    this->CommunicationParameter.panId.trim();
-                    ESP_LOGI(TAG, "Pan ID : %s", this->CommunicationParameter.panId.c_str());
-                    return InitializeState::waitEpanDescAddr;
-                } else {
-                    return InitializeState::activeScanWithIE;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::waitEpanDescAddr,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                std::vector<String> tokens = splitString(line, ':');
-                if (tokens.size() == 2 && tokens[0].indexOf("Addr") > -1) {
-                    this->CommunicationParameter.macAddress = tokens[1];
-                    this->CommunicationParameter.macAddress.trim();
-                    ESP_LOGI(TAG, "Addr : %s", this->CommunicationParameter.macAddress.c_str());
-                    return InitializeState::waitEpanDescLQI;
-                } else {
-                    return InitializeState::activeScanWithIE;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::waitEpanDescLQI,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                std::vector<String> tokens = splitString(line, ':');
-                if (tokens.size() == 2 && tokens[0].indexOf("LQI") > -1) {
-                    this->CommunicationParameter.LQI = tokens[1];
-                    this->CommunicationParameter.LQI.trim();
-                    ESP_LOGI(TAG, "LQI : %s", this->CommunicationParameter.LQI.c_str());
-                    return InitializeState::waitEpanDescPairId;
-                } else {
-                    return InitializeState::activeScanWithIE;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::waitEpanDescPairId,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                std::vector<String> tokens = splitString(line, ':');
-                if (tokens.size() == 2 && tokens[0].indexOf("PairID") > -1) {
-                    this->CommunicationParameter.pairId = tokens[1];
-                    this->CommunicationParameter.pairId.trim();
-                    ESP_LOGI(TAG, "PairID : %s", this->CommunicationParameter.pairId.c_str());
-                    return InitializeState::waitScanEvent;
-                } else {
-                    return InitializeState::activeScanWithIE;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::convertAddr,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress) > 0 ? InitializeState::waitConvertAddr : InitializeState::activeScanWithIE;
-            },
-        },
-        {
-            .state     = InitializeState::waitConvertAddr,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                if (line.length() == 39) {
-                    this->CommunicationParameter.ipv6Address = line;
-                    this->CommunicationParameter.ipv6Address.trim();
-                    ESP_LOGI(TAG, "IPv6 : %s", this->CommunicationParameter.ipv6Address.c_str());
-                    return InitializeState::setChannel;
-                } else {
-                    return InitializeState::activeScanWithIE;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::setChannel,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return this->settingRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) > 0 ? InitializeState::waitSetChannel : InitializeState::activeScanWithIE;
-            },
-        },
-        {.state = InitializeState::waitSetChannel, .read = true, .processor = __BP35A1_expectOk(InitializeState::setPanId, InitializeState::activeScanWithIE)},
-        {
-            .state     = InitializeState::setPanId,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return this->settingRegister(RegisterNum::PanId, this->CommunicationParameter.panId) > 0 ? InitializeState::waitSetPanId : InitializeState::activeScanWithIE;
-            },
-        },
-        {.state = InitializeState::waitSetPanId, .read = true, .processor = __BP35A1_expectOk(InitializeState::skJoin, InitializeState::activeScanWithIE)},
-        {
-            .state     = InitializeState::skJoin,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                return this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address) > 0 ? InitializeState::waitSkJoin : InitializeState::activeScanWithIE;
-            },
-        },
-        {.state = InitializeState::waitSkJoin, .read = true, .processor = __BP35A1_expectOk(InitializeState::waitPana, InitializeState::activeScanWithIE)},
-        {
-            .state     = InitializeState::waitPana,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                Event event = Event(line.c_str(), line.length());
-                ESP_LOGI(TAG, "Receive Event : %02X", event.type);
-                switch (event.type) {
-                    case Event::Type::SuccessPANA:
-                        ESP_LOGD(TAG, "Success PANA");
-                        return InitializeState::readyCommunication;
-                    case Event::Type::FailedPANA:
-                        ESP_LOGD(TAG, "Failed PANA... retry");
-                        return InitializeState::convertAddr;
-                    default:
-                        ESP_LOGD(TAG, "Unexpected Event... continue");
-                        return InitializeState::waitPana;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::readyCommunication,
-            .read      = false,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                this->echonet.generateGetRequest(std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>({
-                    LowVoltageSmartElectricEnergyMeterClass::Property::Coefficient,
-                    LowVoltageSmartElectricEnergyMeterClass::Property::CumulativeEnergyUnit,
-                }));
-                sendUdpData(this->echonet.getRawData().data(), echonet.size());
-                return InitializeState::waitInitParamSuccessUdpSend;
-            },
-        },
-        {
-            .state     = InitializeState::waitInitParamSuccessUdpSend,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                Event event = Event(line.c_str(), line.length());
-                ESP_LOGI(TAG, "Receive Event : %02X", event.type);
-                switch (event.type) {
-                    case Event::Type::CompleteUdpSending:
-                        ESP_LOGD(TAG, "Success Send UDP");
-                        return InitializeState::waitInitParamErxudp;
-                    default:
-                        ESP_LOGD(TAG, "Unexpected Event... continue");
-                        return InitializeState::waitInitParamSuccessUdpSend;
-                }
-            },
-        },
-        {
-            .state     = InitializeState::waitInitParamErxudp,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                if (line.indexOf("ERXUDP " + this->CommunicationParameter.ipv6Address) > -1) {
-                    if (this->echonet.load(ErxUdp(line).payload.c_str()) && this->echonet.initializeParameter()) {
-                        ESP_LOGI(TAG, "ConvertCumulativeEnergyUnit : %f", this->echonet.cumulativeEnergyUnit);
-                        ESP_LOGI(TAG, "SyntheticTransformationRatio: %d", this->echonet.syntheticTransformationRatio);
-                        return InitializeState::readySmartMeter;
-                    } else {
-                        return InitializeState::readyCommunication;
-                    }
-                } else {
-                    ESP_LOGD(TAG, "Unexpected Event... continue");
-                    return InitializeState::waitInitParamErxudp;
-                }
-            },
-        },
-    };
+    const StateMachine<InitializeState> *getStateMachine(const InitializeState);
+    const StateMachine<CommunicationState> *getStateMachine(const CommunicationState);
 
-    const std::vector<StateMachine<CommunicationState>> communicationStateMachines = {
-        {
-            .state     = CommunicationState::waitSuccessUdpSend,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                Event event = Event(line.c_str(), line.length());
-                ESP_LOGI(TAG, "Receive Event : %02X", event.type);
-                switch (event.type) {
-                    case Event::Type::CompleteUdpSending:
-                        ESP_LOGD(TAG, "Success Send UDP");
-                        return CommunicationState::waitErxudp;
-                    default:
-                        ESP_LOGD(TAG, "Unexpected Event... continue");
-                        return CommunicationState::waitSuccessUdpSend;
-                }
-            },
-        },
-        {
-            .state     = CommunicationState::waitErxudp,
-            .read      = true,
-            .processor = [&](const String line, StateMachineCallback_t const callback) {
-                if (line.indexOf("ERXUDP " + this->CommunicationParameter.ipv6Address) > -1) {
-                    if (callback != NULL && this->echonet.load(ErxUdp(line).payload.c_str())) {
-                        callback(this->echonet);
-                    }
-                    return CommunicationState::ready;
-                } else {
-                    ESP_LOGD(TAG, "Unexpected Event... continue");
-                    return CommunicationState::waitErxudp;
-                }
-            },
-        },
-    };
+    template <class StateType>
+    const StateMachine<StateType> *findStateMachine(const std::vector<StateMachine<StateType>> *const, const StateType);
 };
