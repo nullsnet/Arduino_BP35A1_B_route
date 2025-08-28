@@ -77,7 +77,7 @@ class BP35A1 {
     void resetCommunicationState();
 
   private:
-    static constexpr const char *TAG = "bp35a1";
+    static constexpr const char *const TAG = "bp35a1";
     LowVoltageSmartElectricEnergyMeterClass echonet;
     const unsigned int scanChannelMask = 0xFFFFFFFF;
 

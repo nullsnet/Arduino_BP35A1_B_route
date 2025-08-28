@@ -56,7 +56,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitEinfo,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                std::vector<String> tokens = splitString(line, ' ');
+                const std::vector<String> tokens = splitString(line, ' ');
                 if (tokens.size() == 6 && tokens[0] == "EINFO") {
                     this->skinfo.ipv6Address  = tokens[1];
                     this->skinfo.macAddress64 = tokens[2];
@@ -87,7 +87,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitEver,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                std::vector<String> tokens = splitString(line, ' ');
+                const std::vector<String> tokens = splitString(line, ' ');
                 if (tokens.size() == 2 && tokens[0] == "EVER") {
                     this->eVer = tokens[1];
                     ESP_LOGI(TAG, "EVER : %s", this->eVer.c_str());
@@ -126,7 +126,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitReadOpt,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                std::vector<String> tokens = splitString(line, ' ');
+                const std::vector<String> tokens = splitString(line, ' ');
                 if (tokens.size() == 2 && tokens[0] == "OK" && tokens[1] == "01") {
                     return InitializeState::activeScanWithIE;
                 } else {
@@ -150,7 +150,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
                 static uint32_t duration = 3;
                 char s[16];
                 snprintf(s, sizeof(s), "%d %08X %X", (uint8_t)this->scanMode, this->scanChannelMask, duration);
-                String arg = String(s);
+                const String arg = String(s);
                 this->execCommand(SKCmd::scanSKStack, &arg);
                 duration = duration < 14 ? duration + 1 : duration;
                 return InitializeState::waitActiveScanWithIEOk;
@@ -166,7 +166,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
                 if (receivedBeacon == true) {
                     seceivedEpanDesc = true;
                 }
-                Event event = Event(line.c_str(), line.length());
+                const Event event = Event(line.c_str(), line.length());
                 ESP_LOGI(TAG, "Receive Event : %02X", event.type);
                 switch (event.type) {
                     case Event::Type::ReceiveBeacon:
@@ -202,7 +202,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitEpanDescChannel,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                std::vector<String> tokens = splitString(line, ':');
+                const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Channel") > -1) {
                     this->CommunicationParameter.channel = tokens[1];
                     this->CommunicationParameter.channel.trim();
@@ -217,7 +217,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitEpanDescChannelPage,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                std::vector<String> tokens = splitString(line, ':');
+                const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Channel Page") > -1) {
                     this->CommunicationParameter.channelPage = tokens[1];
                     this->CommunicationParameter.channelPage.trim();
@@ -232,7 +232,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitEpanDescPanId,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                std::vector<String> tokens = splitString(line, ':');
+                const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Pan ID") > -1) {
                     this->CommunicationParameter.panId = tokens[1];
                     this->CommunicationParameter.panId.trim();
@@ -247,7 +247,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitEpanDescAddr,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                std::vector<String> tokens = splitString(line, ':');
+                const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Addr") > -1) {
                     this->CommunicationParameter.macAddress = tokens[1];
                     this->CommunicationParameter.macAddress.trim();
@@ -262,7 +262,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitEpanDescLQI,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                std::vector<String> tokens = splitString(line, ':');
+                const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("LQI") > -1) {
                     this->CommunicationParameter.LQI = tokens[1];
                     this->CommunicationParameter.LQI.trim();
@@ -277,7 +277,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitEpanDescPairId,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                std::vector<String> tokens = splitString(line, ':');
+                const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("PairID") > -1) {
                     this->CommunicationParameter.pairId = tokens[1];
                     this->CommunicationParameter.pairId.trim();
@@ -337,7 +337,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitPana,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                Event event = Event(line.c_str(), line.length());
+                const Event event = Event(line.c_str(), line.length());
                 ESP_LOGI(TAG, "Receive Event : %02X", event.type);
                 switch (event.type) {
                     case Event::Type::SuccessPANA:
@@ -368,7 +368,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::waitInitParamSuccessUdpSend,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                Event event = Event(line.c_str(), line.length());
+                const Event event = Event(line.c_str(), line.length());
                 ESP_LOGI(TAG, "Receive Event : %02X", event.type);
                 switch (event.type) {
                     case Event::Type::CompleteUdpSending:
@@ -403,20 +403,32 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
 }
 const BP35A1::StateMachine<BP35A1::CommunicationState> *BP35A1::getStateMachine(CommunicationState const state) {
     static const std::vector<StateMachine<CommunicationState>> stateMachines = {
-        // TODO SKSENDTO -> OK
         {
             .state     = CommunicationState::waitSuccessUdpSend,
             .read      = true,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                Event event = Event(line.c_str(), line.length());
-                ESP_LOGI(TAG, "Receive Event : %02X", event.type);
-                switch (event.type) {
-                    case Event::Type::CompleteUdpSending:
-                        ESP_LOGD(TAG, "Success Send UDP");
-                        return CommunicationState::waitErxudp;
-                    default:
-                        ESP_LOGD(TAG, "Unexpected Event... continue");
-                        return CommunicationState::waitSuccessUdpSend;
+                static bool receivedOk                 = false;
+                static bool receivedCompleteUdpSending = false;
+                if (line.indexOf("OK") > -1) {
+                    receivedOk = true;
+                } else {
+                    const Event event = Event(line.c_str(), line.length());
+                    ESP_LOGI(TAG, "Receive Event : %02X", event.type);
+                    switch (event.type) {
+                        case Event::Type::CompleteUdpSending:
+                            ESP_LOGD(TAG, "Success Send UDP");
+                            receivedCompleteUdpSending = true;
+                            break;
+                        default:
+                            ESP_LOGD(TAG, "Unexpected Event... continue");
+                            break;
+                    }
+                }
+                if (receivedOk && receivedCompleteUdpSending) {
+                    receivedOk = receivedCompleteUdpSending = false;
+                    return CommunicationState::waitErxudp;
+                } else {
+                    return CommunicationState::waitSuccessUdpSend;
                 }
             },
         },
