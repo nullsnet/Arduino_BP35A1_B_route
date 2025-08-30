@@ -12,11 +12,10 @@ class BP35A1 {
     /// @brief Wi-SUNホスト接続状態
     enum class InitializeState : uint8_t {
         uninitialized,
-        waitSKTerm,
+        waitSKTermEchoBack,
         terminateSKStack,
-        waitTerminateSKStack,
         resetSKStack,
-        waitResetSKStack,
+        waitResetSKStackEchoBack,
         disableEcho,
         waitDisableEcho,
         getSKInfo,
@@ -69,7 +68,7 @@ class BP35A1 {
     void setStatusChangeCallback(void (*)(InitializeState));
     void sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>);
     BP35A1(String, String, ISerialIO &);
-    bool initializeLoop(void);
+    bool initializeLoop(const bool forceReInitialize = false);
     bool communicationLoop(StateMachineCallback_t const, const CommunicationState);
     InitializeState getInitializeState();
     CommunicationState getCommunicationState();
@@ -143,7 +142,6 @@ class BP35A1 {
     };
     size_t settingRegister(const RegisterNum, const String &);
     size_t execCommand(const SKCmd, const String *const = nullptr);
-    void discardBuffer(uint32_t);
     void sendUdpData(const uint8_t *const, const uint16_t);
 
     template <class StateType>

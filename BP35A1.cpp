@@ -45,11 +45,35 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             .state     = InitializeState::uninitialized,
             .read      = false,
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                this->execCommand(SKCmd::terminateSKStack);
-                this->execCommand(SKCmd::resetSKStack);
-                discardBuffer(50);
-                this->execCommand(SKCmd::disableEcho);
-                return InitializeState::waitDisableEcho;
+                return this->execCommand(SKCmd::terminateSKStack) > 0 ? InitializeState::waitSKTermEchoBack : InitializeState::uninitialized;
+            },
+        },
+        {
+            .state     = InitializeState::waitSKTermEchoBack,
+            .read      = false,
+            .processor = [this](const String &line, const StateMachineCallback_t callback) {
+                return InitializeState::resetSKStack;
+            },
+        },
+        {
+            .state     = InitializeState::resetSKStack,
+            .read      = false,
+            .processor = [this](const String &line, const StateMachineCallback_t callback) {
+                return this->execCommand(SKCmd::resetSKStack) > 0 ? InitializeState::waitResetSKStackEchoBack : InitializeState::resetSKStack;
+            },
+        },
+        {
+            .state     = InitializeState::waitResetSKStackEchoBack,
+            .read      = false,
+            .processor = [this](const String &line, const StateMachineCallback_t callback) {
+                return InitializeState::disableEcho;
+            },
+        },
+        {
+            .state     = InitializeState::disableEcho,
+            .read      = false,
+            .processor = [this](const String &line, const StateMachineCallback_t callback) {
+                return this->execCommand(SKCmd::disableEcho) > 0 ? InitializeState::waitDisableEcho : InitializeState::disableEcho;
             },
         },
         {
@@ -505,7 +529,10 @@ bool BP35A1::stateMachineLoop(const StateMachine<StateType> *const stateMachine,
     return *recordedState == expectedState;
 }
 
-bool BP35A1::initializeLoop(void) {
+bool BP35A1::initializeLoop(const bool forceReInitialize) {
+    if (forceReInitialize) {
+        this->initializeState = InitializeState::uninitialized;
+    }
     const bool result = stateMachineLoop(getStateMachine(this->initializeState), &this->initializeState, InitializeState::readySmartMeter, NULL);
     if (this->callback != NULL) {
         this->callback(this->initializeState);
@@ -515,13 +542,6 @@ bool BP35A1::initializeLoop(void) {
 
 bool BP35A1::communicationLoop(const StateMachineCallback_t callback, const CommunicationState expectedState) {
     return stateMachineLoop(getStateMachine(this->communicationState), &this->communicationState, expectedState, callback);
-}
-
-void BP35A1::discardBuffer(const uint32_t delayms) {
-    delay(delayms);
-    while (this->serial_.available()) {
-        this->serial_.read();
-    }
 }
 
 void BP35A1::sendUdpData(const uint8_t *const data, const uint16_t length) {
