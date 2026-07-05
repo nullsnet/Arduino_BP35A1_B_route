@@ -37,7 +37,7 @@ const BP35A1::StateMachine<StateType> *BP35A1::findStateMachine(const std::vecto
     for (const auto &machine : *stateMachines)
         if (machine.state == state)
             return &machine;
-    return NULL;
+    return nullptr;
 }
 
 const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(const InitializeState state) {
@@ -107,14 +107,14 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
                     this->skinfo.channel      = tokens[3];
                     this->skinfo.panId        = tokens[4];
                     this->skinfo.macAddress16 = tokens[5];
-                    ESP_LOGI(TAG, "ipv6Address  : %s", this->skinfo.ipv6Address);
-                    ESP_LOGI(TAG, "macAddress64 : %s", this->skinfo.macAddress64);
-                    ESP_LOGI(TAG, "channel      : %s", this->skinfo.channel);
-                    ESP_LOGI(TAG, "panId        : %s", this->skinfo.panId);
-                    ESP_LOGI(TAG, "macAddress16 : %s", this->skinfo.macAddress16);
+                    ESP_LOGI(TAG, "ipv6Address  : %s", this->skinfo.ipv6Address.c_str());
+                    ESP_LOGI(TAG, "macAddress64 : %s", this->skinfo.macAddress64.c_str());
+                    ESP_LOGI(TAG, "channel      : %s", this->skinfo.channel.c_str());
+                    ESP_LOGI(TAG, "panId        : %s", this->skinfo.panId.c_str());
+                    ESP_LOGI(TAG, "macAddress16 : %s", this->skinfo.macAddress16.c_str());
                     return InitializeState::waitEinfoOk;
                 } else {
-                    ESP_LOGE(TAG, "Unexpected tokens : %d / [0] : %s", tokens.size(), tokens[0]);
+                    ESP_LOGE(TAG, "Unexpected tokens : %d / [0] : %s", tokens.size(), tokens[0].c_str());
                     return InitializeState::uninitialized;
                 }
             },
@@ -135,7 +135,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
                     ESP_LOGI(TAG, "EVER : %s", this->eVer.c_str());
                     return InitializeState::waitEverOk;
                 } else {
-                    ESP_LOGE(TAG, "Unexpected tokens : %d / [0] : %s", tokens.size(), tokens[0]);
+                    ESP_LOGE(TAG, "Unexpected tokens : %d / [0] : %s", tokens.size(), tokens[0].c_str());
                     return InitializeState::uninitialized;
                 }
             },
@@ -423,7 +423,7 @@ const BP35A1::StateMachine<BP35A1::CommunicationState> *BP35A1::getStateMachine(
             DECLARE_STATE(CommunicationState::waitErxudp, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 if (line.indexOf("ERXUDP " + this->CommunicationParameter.ipv6Address) > -1) {
-                    if (callback != NULL && this->echonet.load(ErxUdp(line).payload.c_str())) {
+                    if (callback != nullptr && this->echonet.load(ErxUdp(line).payload.c_str())) {
                         callback(this->echonet);
                     }
                     return CommunicationState::ready;
@@ -478,7 +478,7 @@ size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
 template <class StateType>
 bool BP35A1::stateMachineLoop(const StateMachine<StateType> *const stateMachine, StateType *const recordedState, const StateType expectedState, const StateMachineCallback_t callback) {
     static String rx_buffer_;
-    if (stateMachine != NULL && recordedState != NULL && stateMachine->state == *recordedState) {
+    if (stateMachine != nullptr && recordedState != nullptr && stateMachine->state == *recordedState) {
         if (stateMachine->read == false || (stateMachine->read == true && this->serial_.available())) {
             rx_buffer_ = this->serial_.readStringUntil('\n');
             rx_buffer_.trim();
@@ -499,8 +499,8 @@ bool BP35A1::initializeLoop(const bool forceReInitialize) {
     if (forceReInitialize) {
         this->initializeState = InitializeState::uninitialized;
     }
-    const bool result = stateMachineLoop(getStateMachine(this->initializeState), &this->initializeState, InitializeState::readySmartMeter, NULL);
-    if (this->callback != NULL) {
+    const bool result = stateMachineLoop(getStateMachine(this->initializeState), &this->initializeState, InitializeState::readySmartMeter, nullptr);
+    if (this->callback != nullptr) {
         this->callback(this->initializeState);
     }
     return result;
