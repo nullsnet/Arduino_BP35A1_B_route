@@ -165,7 +165,7 @@ class BP35A1 {
     String WPassword;
     String WID;
 
-    void (*callback)(InitializeState) = NULL; // BP35A1のステータス変更を通知するコールバック
+    void (*callback)(InitializeState) = nullptr; // BP35A1のステータス変更を通知するコールバック
     struct {
         String channel;
         String channelPage;
@@ -184,6 +184,16 @@ class BP35A1 {
         String panId;
         String macAddress16;
     } skinfo;
+
+    // lambda内のstatic変数をメンバ化：状態リセット時に初期化可能にする
+    bool udpSendReceivedOk = false;
+    bool udpSendReceivedComplete = false;
+    bool disableEchoReceivedOk = false;
+    bool disableEchoReceivedEcho = false;
+    uint32_t scanDuration = 3;
+    bool scanReceivedBeacon = false;
+    bool scanReceivedEpanDesc = false;
+    String rxBuffer; // stateMachineLoopのstatic変数をメンバ化
 
     const StateMachine<InitializeState> *getStateMachine(const InitializeState);
     const StateMachine<CommunicationState> *getStateMachine(const CommunicationState);

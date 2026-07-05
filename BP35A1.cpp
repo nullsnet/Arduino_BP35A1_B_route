@@ -1,5 +1,6 @@
 #include "BP35A1.hpp"
 #include "SkSendTo.hpp"
+#include <algorithm>
 #include <Arduino.h>
 
 #define EXPEXT_OK(receiveOk, notReceivedOk) [this](const String &line, const StateMachineCallback_t callback) { return line.indexOf("OK") > -1 ? receiveOk : notReceivedOk; }
@@ -7,25 +8,23 @@
 
 template <class StateType>
 StateType BP35A1::checkSuccessUdpSend(const String &line, const StateType success, const StateType failed) {
-    static bool receivedOk                 = false;
-    static bool receivedCompleteUdpSending = false;
     if (line.indexOf("OK") > -1) {
-        receivedOk = true;
+        udpSendReceivedOk = true;
     } else {
         const Event event = Event(line.c_str(), line.length());
         ESP_LOGI(TAG, "Receive Event : %02X", event.type);
         switch (event.type) {
             case Event::Type::CompleteUdpSending:
                 ESP_LOGD(TAG, "Success Send UDP");
-                receivedCompleteUdpSending = true;
+                udpSendReceivedComplete = true;
                 break;
             default:
                 ESP_LOGD(TAG, "Unexpected Event... continue");
                 break;
         }
     }
-    if (receivedOk && receivedCompleteUdpSending) {
-        receivedOk = receivedCompleteUdpSending = false;
+    if (udpSendReceivedOk && udpSendReceivedComplete) {
+        udpSendReceivedOk = udpSendReceivedComplete = false;
         return success;
     } else {
         return failed;
@@ -75,16 +74,14 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
         {
             DECLARE_STATE(InitializeState::waitDisableEcho, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                static bool receivedOk   = false;
-                static bool receivedEcho = false;
                 if (line.indexOf("SKSREG") > -1) {
-                    receivedEcho = true;
+                    disableEchoReceivedEcho = true;
                 }
                 if (line.indexOf("OK") > -1) {
-                    receivedOk = true;
+                    disableEchoReceivedOk = true;
                 }
-                if (receivedEcho && receivedOk) {
-                    receivedEcho = receivedOk = false;
+                if (disableEchoReceivedEcho && disableEchoReceivedOk) {
+                    disableEchoReceivedEcho = disableEchoReceivedOk = false;
                     return InitializeState::getSKInfo;
                 } else {
                     return InitializeState::waitDisableEcho;
@@ -183,12 +180,11 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
         {
             DECLARE_STATE(InitializeState::activeScanWithIE, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                static uint32_t duration = 3;
                 char s[16];
-                snprintf(s, sizeof(s), "%d %08X %X", (uint8_t)this->scanMode, this->scanChannelMask, duration);
+                snprintf(s, sizeof(s), "%d %08X %X", (uint8_t)this->scanMode, this->scanChannelMask, scanDuration);
                 const String arg = String(s);
                 this->execCommand(SKCmd::scanSKStack, &arg);
-                duration = duration < 14 ? duration + 1 : duration;
+                scanDuration = scanDuration < 14 ? scanDuration + 1 : scanDuration;
                 return InitializeState::waitActiveScanWithIEOk;
             },
         },
@@ -196,10 +192,8 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
         {
             DECLARE_STATE(InitializeState::waitScanEvent, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
-                static bool receivedBeacon   = false;
-                static bool seceivedEpanDesc = false;
-                if (receivedBeacon == true) {
-                    seceivedEpanDesc = true;
+                if (scanReceivedBeacon == true) {
+                    scanReceivedEpanDesc = true;
                 }
                 const Event event = Event(line.c_str(), line.length());
                 ESP_LOGI(TAG, "Receive Event : %02X", event.type);
@@ -208,16 +202,16 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
                         ESP_LOGD(TAG, "Receive Beacon");
                         this->CommunicationParameter.destIpv6Address = String(event.sender);
                         ESP_LOGI(TAG, "Dest IPv6 : %s", this->CommunicationParameter.destIpv6Address.c_str());
-                        receivedBeacon = true;
+                        scanReceivedBeacon = true;
                         return InitializeState::waitEpanDesc;
                     case Event::Type::CompleteActiveScan:
-                        if (receivedBeacon && seceivedEpanDesc) {
+                        if (scanReceivedBeacon && scanReceivedEpanDesc) {
                             ESP_LOGD(TAG, "Complete Active Scan, and received beacon");
-                            receivedBeacon = seceivedEpanDesc = false;
+                            scanReceivedBeacon = scanReceivedEpanDesc = false;
                             return InitializeState::convertAddr;
                         } else {
                             ESP_LOGD(TAG, "Complete Active Scan, but not received beacon... retry");
-                            receivedBeacon = seceivedEpanDesc = false;
+                            scanReceivedBeacon = scanReceivedEpanDesc = false;
                             return InitializeState::activeScanWithIE;
                         }
                     default:
@@ -461,6 +455,13 @@ BP35A1::CommunicationState BP35A1::getCommunicationState() {
 
 void BP35A1::resetInitializeState() {
     this->initializeState = InitializeState::uninitialized;
+    udpSendReceivedOk = false;
+    udpSendReceivedComplete = false;
+    disableEchoReceivedOk = false;
+    disableEchoReceivedEcho = false;
+    scanDuration = 3;
+    scanReceivedBeacon = false;
+    scanReceivedEpanDesc = false;
 }
 
 void BP35A1::resetCommunicationState() {
@@ -477,19 +478,18 @@ size_t BP35A1::execCommand(const SKCmd skCmdNum, const String *const arg) {
 
 template <class StateType>
 bool BP35A1::stateMachineLoop(const StateMachine<StateType> *const stateMachine, StateType *const recordedState, const StateType expectedState, const StateMachineCallback_t callback) {
-    static String rx_buffer_;
     if (stateMachine != nullptr && recordedState != nullptr && stateMachine->state == *recordedState) {
         if (stateMachine->read == false || (stateMachine->read == true && this->serial_.available())) {
-            rx_buffer_ = this->serial_.readStringUntil('\n');
-            rx_buffer_.trim();
-            if (stateMachine->read == true && rx_buffer_.length() == 0) {
+            rxBuffer = this->serial_.readStringUntil('\n');
+            rxBuffer.trim();
+            if (stateMachine->read == true && rxBuffer.length() == 0) {
                 return *recordedState == expectedState;
             }
-            ESP_LOGD(TAG, "<< %s", rx_buffer_.c_str());
+            ESP_LOGD(TAG, "<< %s", rxBuffer.c_str());
             ESP_LOGD(TAG, "current state : %u", *recordedState);
-            *recordedState = stateMachine->processor(rx_buffer_, callback);
+            *recordedState = stateMachine->processor(rxBuffer, callback);
             ESP_LOGD(TAG, "next state : %u", *recordedState);
-            rx_buffer_.clear();
+            rxBuffer.clear();
         }
     }
     return *recordedState == expectedState;
@@ -517,9 +517,11 @@ void BP35A1::sendUdpData(const uint8_t *const data, const uint16_t length) {
     this->serial_.print("\r\n");
     this->serial_.flush();
 
-    char logBuffer[length * 2 + 1] = {'\0'};
-    for (size_t i = 0; i < length; i++) {
-        snprintf(&logBuffer[i * 2], sizeof(logBuffer) - (i * 2), "%02X", data[i]);
+    constexpr size_t LOG_BUF_SIZE = 128;
+    char logBuffer[LOG_BUF_SIZE] = {'\0'};
+    size_t maxBytes = std::min(static_cast<size_t>(length), (LOG_BUF_SIZE - 1) / 2);
+    for (size_t i = 0; i < maxBytes; i++) {
+        snprintf(&logBuffer[i * 2], LOG_BUF_SIZE - (i * 2) - 2, "%02X", data[i]);
     }
     ESP_LOGD(TAG, ">> %s%s", udpData.getSendString().c_str(), logBuffer);
 }
