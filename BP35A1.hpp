@@ -193,8 +193,6 @@ class BP35A1 {
     uint32_t scanDuration = 3;
     bool scanReceivedBeacon = false;
     bool scanReceivedEpanDesc = false;
-    String rxBuffer; // stateMachineLoopのstatic変数をメンバ化
-
     const StateMachine<InitializeState> *getStateMachine(const InitializeState);
     const StateMachine<CommunicationState> *getStateMachine(const CommunicationState);
     template <class StateType>

@@ -480,7 +480,7 @@ template <class StateType>
 bool BP35A1::stateMachineLoop(const StateMachine<StateType> *const stateMachine, StateType *const recordedState, const StateType expectedState, const StateMachineCallback_t callback) {
     if (stateMachine != nullptr && recordedState != nullptr && stateMachine->state == *recordedState) {
         if (stateMachine->read == false || (stateMachine->read == true && this->serial_.available())) {
-            rxBuffer = this->serial_.readStringUntil('\n');
+            String rxBuffer = this->serial_.readStringUntil('\n');
             rxBuffer.trim();
             if (stateMachine->read == true && rxBuffer.length() == 0) {
                 return *recordedState == expectedState;
@@ -489,7 +489,6 @@ bool BP35A1::stateMachineLoop(const StateMachine<StateType> *const stateMachine,
             ESP_LOGD(TAG, "current state : %u", *recordedState);
             *recordedState = stateMachine->processor(rxBuffer, callback);
             ESP_LOGD(TAG, "next state : %u", *recordedState);
-            rxBuffer.clear();
         }
     }
     return *recordedState == expectedState;
