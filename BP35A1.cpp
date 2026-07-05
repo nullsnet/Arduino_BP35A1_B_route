@@ -2,7 +2,8 @@
 #include "SkSendTo.hpp"
 #include <Arduino.h>
 
-#define __BP35A1_expectOk(receiveOk, notReceivedOk) [this](const String &line, const StateMachineCallback_t callback) { return line.indexOf("OK") > -1 ? receiveOk : notReceivedOk; }
+#define EXPEXT_OK(receiveOk, notReceivedOk) [this](const String &line, const StateMachineCallback_t callback) { return line.indexOf("OK") > -1 ? receiveOk : notReceivedOk; }
+#define DECLARE_STATE(_state, _read) .state = _state, .read = _read
 
 template <class StateType>
 StateType BP35A1::checkSuccessUdpSend(const String &line, const StateType success, const StateType failed) {
@@ -42,43 +43,37 @@ const BP35A1::StateMachine<StateType> *BP35A1::findStateMachine(const std::vecto
 const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(const InitializeState state) {
     static const std::vector<StateMachine<InitializeState>> stateMachines = {
         {
-            .state     = InitializeState::uninitialized,
-            .read      = false,
+            DECLARE_STATE(InitializeState::uninitialized, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::terminateSKStack) > 0 ? InitializeState::waitSKTermEchoBack : InitializeState::uninitialized;
             },
         },
         {
-            .state     = InitializeState::waitSKTermEchoBack,
-            .read      = false,
+            DECLARE_STATE(InitializeState::waitSKTermEchoBack, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return InitializeState::resetSKStack;
             },
         },
         {
-            .state     = InitializeState::resetSKStack,
-            .read      = false,
+            DECLARE_STATE(InitializeState::resetSKStack, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::resetSKStack) > 0 ? InitializeState::waitResetSKStackEchoBack : InitializeState::resetSKStack;
             },
         },
         {
-            .state     = InitializeState::waitResetSKStackEchoBack,
-            .read      = false,
+            DECLARE_STATE(InitializeState::waitResetSKStackEchoBack, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return InitializeState::disableEcho;
             },
         },
         {
-            .state     = InitializeState::disableEcho,
-            .read      = false,
+            DECLARE_STATE(InitializeState::disableEcho, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::disableEcho) > 0 ? InitializeState::waitDisableEcho : InitializeState::disableEcho;
             },
         },
         {
-            .state     = InitializeState::waitDisableEcho,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitDisableEcho, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 static bool receivedOk   = false;
                 static bool receivedEcho = false;
@@ -97,15 +92,13 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::getSKInfo,
-            .read      = false,
+            DECLARE_STATE(InitializeState::getSKInfo, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::getSkInfo) > 0 ? InitializeState::waitEinfo : InitializeState::uninitialized;
             },
         },
         {
-            .state     = InitializeState::waitEinfo,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitEinfo, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const std::vector<String> tokens = splitString(line, ' ');
                 if (tokens.size() == 6 && tokens[0] == "EINFO") {
@@ -126,17 +119,15 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
                 }
             },
         },
-        {.state = InitializeState::waitEinfoOk, .read = true, .processor = __BP35A1_expectOk(InitializeState::getSKStackVersion, InitializeState::uninitialized)},
+        {DECLARE_STATE(InitializeState::waitEinfoOk, true), .processor = EXPEXT_OK(InitializeState::getSKStackVersion, InitializeState::uninitialized)},
         {
-            .state     = InitializeState::getSKStackVersion,
-            .read      = false,
+            DECLARE_STATE(InitializeState::getSKStackVersion, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::getSKStackVersion) > 0 ? InitializeState::waitEver : InitializeState::uninitialized;
             },
         },
         {
-            .state     = InitializeState::waitEver,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitEver, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const std::vector<String> tokens = splitString(line, ' ');
                 if (tokens.size() == 2 && tokens[0] == "EVER") {
@@ -149,33 +140,29 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
                 }
             },
         },
-        {.state = InitializeState::waitEverOk, .read = true, .processor = __BP35A1_expectOk(InitializeState::setSKStackPassword, InitializeState::uninitialized)},
+        {DECLARE_STATE(InitializeState::waitEverOk, true), .processor = EXPEXT_OK(InitializeState::setSKStackPassword, InitializeState::uninitialized)},
         {
-            .state     = InitializeState::setSKStackPassword,
-            .read      = false,
+            DECLARE_STATE(InitializeState::setSKStackPassword, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::setSKStackPassword, &this->WPassword) > 0 ? InitializeState::waitSetSKStackPassword : InitializeState::uninitialized;
             },
         },
-        {.state = InitializeState::waitSetSKStackPassword, .read = true, .processor = __BP35A1_expectOk(InitializeState::setSKStackId, InitializeState::uninitialized)},
+        {DECLARE_STATE(InitializeState::waitSetSKStackPassword, true), .processor = EXPEXT_OK(InitializeState::setSKStackId, InitializeState::uninitialized)},
         {
-            .state     = InitializeState::setSKStackId,
-            .read      = false,
+            DECLARE_STATE(InitializeState::setSKStackId, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::setSKStackID, &this->WID) > 0 ? InitializeState::waitSetSKStackId : InitializeState::uninitialized;
             },
         },
-        {.state = InitializeState::waitSetSKStackId, .read = true, .processor = __BP35A1_expectOk(InitializeState::readOpt, InitializeState::uninitialized)},
+        {DECLARE_STATE(InitializeState::waitSetSKStackId, true), .processor = EXPEXT_OK(InitializeState::readOpt, InitializeState::uninitialized)},
         {
-            .state     = InitializeState::readOpt,
-            .read      = false,
+            DECLARE_STATE(InitializeState::readOpt, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::readOpt) > 0 ? InitializeState::waitReadOpt : InitializeState::uninitialized;
             },
         },
         {
-            .state     = InitializeState::waitReadOpt,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitReadOpt, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const std::vector<String> tokens = splitString(line, ' ');
                 if (tokens.size() == 2 && tokens[0] == "OK" && tokens[1] == "01") {
@@ -186,17 +173,15 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::writeOpt,
-            .read      = false,
+            DECLARE_STATE(InitializeState::writeOpt, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const String arg = "01";
                 return this->execCommand(SKCmd::writeOpt, &arg) > 0 ? InitializeState::waitWriteOpt : InitializeState::uninitialized;
             },
         },
-        {.state = InitializeState::waitWriteOpt, .read = true, .processor = __BP35A1_expectOk(InitializeState::activeScanWithIE, InitializeState::uninitialized)},
+        {DECLARE_STATE(InitializeState::waitWriteOpt, true), .processor = EXPEXT_OK(InitializeState::activeScanWithIE, InitializeState::uninitialized)},
         {
-            .state     = InitializeState::activeScanWithIE,
-            .read      = false,
+            DECLARE_STATE(InitializeState::activeScanWithIE, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 static uint32_t duration = 3;
                 char s[16];
@@ -207,10 +192,9 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
                 return InitializeState::waitActiveScanWithIEOk;
             },
         },
-        {.state = InitializeState::waitActiveScanWithIEOk, .read = true, .processor = __BP35A1_expectOk(InitializeState::waitScanEvent, InitializeState::waitActiveScanWithIEOk)},
+        {DECLARE_STATE(InitializeState::waitActiveScanWithIEOk, true), .processor = EXPEXT_OK(InitializeState::waitScanEvent, InitializeState::waitActiveScanWithIEOk)},
         {
-            .state     = InitializeState::waitScanEvent,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitScanEvent, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 static bool receivedBeacon   = false;
                 static bool seceivedEpanDesc = false;
@@ -243,15 +227,13 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::waitEpanDesc,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitEpanDesc, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return line == "EPANDESC" ? InitializeState::waitEpanDescChannel : InitializeState::activeScanWithIE;
             },
         },
         {
-            .state     = InitializeState::waitEpanDescChannel,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitEpanDescChannel, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Channel") > -1) {
@@ -265,8 +247,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::waitEpanDescChannelPage,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitEpanDescChannelPage, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Channel Page") > -1) {
@@ -280,8 +261,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::waitEpanDescPanId,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitEpanDescPanId, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Pan ID") > -1) {
@@ -295,8 +275,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::waitEpanDescAddr,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitEpanDescAddr, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("Addr") > -1) {
@@ -310,8 +289,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::waitEpanDescLQI,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitEpanDescLQI, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("LQI") > -1) {
@@ -325,8 +303,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::waitEpanDescPairId,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitEpanDescPairId, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const std::vector<String> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].indexOf("PairID") > -1) {
@@ -340,15 +317,13 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::convertAddr,
-            .read      = false,
+            DECLARE_STATE(InitializeState::convertAddr, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::convertMac2IPv6, &this->CommunicationParameter.macAddress) > 0 ? InitializeState::waitConvertAddr : InitializeState::activeScanWithIE;
             },
         },
         {
-            .state     = InitializeState::waitConvertAddr,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitConvertAddr, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 if (line.length() == 39) {
                     this->CommunicationParameter.ipv6Address = line;
@@ -361,32 +336,28 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::setChannel,
-            .read      = false,
+            DECLARE_STATE(InitializeState::setChannel, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->settingRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) > 0 ? InitializeState::waitSetChannel : InitializeState::activeScanWithIE;
             },
         },
-        {.state = InitializeState::waitSetChannel, .read = true, .processor = __BP35A1_expectOk(InitializeState::setPanId, InitializeState::activeScanWithIE)},
+        {DECLARE_STATE(InitializeState::waitSetChannel, true), .processor = EXPEXT_OK(InitializeState::setPanId, InitializeState::activeScanWithIE)},
         {
-            .state     = InitializeState::setPanId,
-            .read      = false,
+            DECLARE_STATE(InitializeState::setPanId, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->settingRegister(RegisterNum::PanId, this->CommunicationParameter.panId) > 0 ? InitializeState::waitSetPanId : InitializeState::activeScanWithIE;
             },
         },
-        {.state = InitializeState::waitSetPanId, .read = true, .processor = __BP35A1_expectOk(InitializeState::skJoin, InitializeState::activeScanWithIE)},
+        {DECLARE_STATE(InitializeState::waitSetPanId, true), .processor = EXPEXT_OK(InitializeState::skJoin, InitializeState::activeScanWithIE)},
         {
-            .state     = InitializeState::skJoin,
-            .read      = false,
+            DECLARE_STATE(InitializeState::skJoin, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return this->execCommand(SKCmd::joinSKStack, &this->CommunicationParameter.ipv6Address) > 0 ? InitializeState::waitSkJoin : InitializeState::activeScanWithIE;
             },
         },
-        {.state = InitializeState::waitSkJoin, .read = true, .processor = __BP35A1_expectOk(InitializeState::waitPana, InitializeState::activeScanWithIE)},
+        {DECLARE_STATE(InitializeState::waitSkJoin, true), .processor = EXPEXT_OK(InitializeState::waitPana, InitializeState::activeScanWithIE)},
         {
-            .state     = InitializeState::waitPana,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitPana, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 const Event event = Event(line.c_str(), line.length());
                 ESP_LOGI(TAG, "Receive Event : %02X", event.type);
@@ -404,8 +375,7 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::readyCommunication,
-            .read      = false,
+            DECLARE_STATE(InitializeState::readyCommunication, false),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 this->echonet.generateGetRequest(std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>({
                     LowVoltageSmartElectricEnergyMeterClass::Property::Coefficient,
@@ -416,15 +386,13 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
         {
-            .state     = InitializeState::waitInitParamSuccessUdpSend,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitInitParamSuccessUdpSend, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return checkSuccessUdpSend(line, InitializeState::waitInitParamErxudp, InitializeState::waitInitParamSuccessUdpSend);
             },
         },
         {
-            .state     = InitializeState::waitInitParamErxudp,
-            .read      = true,
+            DECLARE_STATE(InitializeState::waitInitParamErxudp, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 if (line.indexOf("ERXUDP " + this->CommunicationParameter.ipv6Address) > -1) {
                     if (this->echonet.load(ErxUdp(line).payload.c_str()) && this->echonet.initializeParameter()) {
@@ -446,15 +414,13 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
 const BP35A1::StateMachine<BP35A1::CommunicationState> *BP35A1::getStateMachine(CommunicationState const state) {
     static const std::vector<StateMachine<CommunicationState>> stateMachines = {
         {
-            .state     = CommunicationState::waitSuccessUdpSend,
-            .read      = true,
+            DECLARE_STATE(CommunicationState::waitSuccessUdpSend, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 return checkSuccessUdpSend(line, CommunicationState::waitErxudp, CommunicationState::waitSuccessUdpSend);
             },
         },
         {
-            .state     = CommunicationState::waitErxudp,
-            .read      = true,
+            DECLARE_STATE(CommunicationState::waitErxudp, true),
             .processor = [this](const String &line, const StateMachineCallback_t callback) {
                 if (line.indexOf("ERXUDP " + this->CommunicationParameter.ipv6Address) > -1) {
                     if (callback != NULL && this->echonet.load(ErxUdp(line).payload.c_str())) {
