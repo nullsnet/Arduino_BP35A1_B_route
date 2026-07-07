@@ -89,8 +89,8 @@ class BP35A1 {
     BP35A1(std::string, std::string, ISerialIO &);
     bool initializeLoop(const bool forceReInitialize = false);
     bool communicationLoop(StateMachineCallback_t const, const CommunicationState);
-    InitializeState getInitializeState();
-    CommunicationState getCommunicationState();
+    InitializeState getInitializeState() const;
+    CommunicationState getCommunicationState() const;
     void resetInitializeState();
     void resetCommunicationState();
 

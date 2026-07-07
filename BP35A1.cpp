@@ -438,11 +438,11 @@ void BP35A1::setStatusChangeCallback(void (*callback)(InitializeState)) {
     this->callback = callback;
 }
 
-BP35A1::InitializeState BP35A1::getInitializeState() {
+BP35A1::InitializeState BP35A1::getInitializeState() const {
     return this->initializeState;
 }
 
-BP35A1::CommunicationState BP35A1::getCommunicationState() {
+BP35A1::CommunicationState BP35A1::getCommunicationState() const {
     return this->communicationState;
 }
 
