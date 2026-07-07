@@ -12,8 +12,8 @@ class skSendTo {
     uint16_t destPort = 0x0E1A;
     uint8_t secured   = 0x01;
     skSendTo();
-    skSendTo(uint16_t length, std::string dest)
-        : length(length), destIpv6(std::move(dest)) {};
+    skSendTo(uint16_t length, const std::string &dest)
+        : length(length), destIpv6(dest) {};
     std::string getSendString() {
         char sendData[256];
         snprintf(sendData, sizeof(sendData), "SKSENDTO %d %s %04X %d %04X ", this->udpHandle, this->destIpv6.c_str(), this->destPort, this->secured, this->length);

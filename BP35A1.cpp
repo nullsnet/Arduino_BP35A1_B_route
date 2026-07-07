@@ -1,6 +1,7 @@
 #include "BP35A1.hpp"
 #include "SkSendTo.hpp"
 #include <algorithm>
+#include <cstring>
 
 #define EXPEXT_OK(receiveOk, notReceivedOk) [this](const std::string &line, const StateMachineCallback_t callback) { return line.find("OK") != std::string::npos ? receiveOk : notReceivedOk; }
 #define DECLARE_STATE(_state, _read) .state = _state, .read = _read

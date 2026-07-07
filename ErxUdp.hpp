@@ -1,7 +1,7 @@
 #pragma once
 
+#include <cstring>
 #include <stdint.h>
-#include <string.h>
 #include <string>
 #include <vector>
 
@@ -37,7 +37,7 @@ class ErxUdp {
     uint16_t length;
     std::string payload;
     ErxUdp() {};
-    ErxUdp(std::string erxUdpData) {
+    ErxUdp(const std::string &erxUdpData) {
         std::vector<std::string> result = split(erxUdpData.c_str(), " ");
         if (result.size() == 9) {
             this->senderIpv6 = result[1];
