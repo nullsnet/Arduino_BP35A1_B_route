@@ -4,8 +4,27 @@
 #include "Event.hpp"
 #include "ISerialIO.h"
 #include "LowVoltageSmartElectricEnergyMeter.hpp"
-#include "esp32-hal-log.h"
+#include <cstdio>
+#include <functional>
+#include <string>
 #include <vector>
+
+#ifdef USE_ESP_LOG
+  #include "esp32-hal-log.h"
+#else
+  #ifndef ESP_LOGI
+    #define ESP_LOGI(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
+    #define ESP_LOGD(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
+    #define ESP_LOGE(tag, fmt, ...) std::fprintf(stderr, "[%s] " fmt "\n", (tag), ##__VA_ARGS__)
+  #endif
+#endif
+
+inline std::string trim(const std::string &s) {
+    auto start = s.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    auto end = s.find_last_not_of(" \t\r\n");
+    return s.substr(start, end - start + 1);
+}
 
 class BP35A1 {
   public:
@@ -67,7 +86,7 @@ class BP35A1 {
 
     void setStatusChangeCallback(void (*)(InitializeState));
     void sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>);
-    BP35A1(String, String, ISerialIO &);
+    BP35A1(std::string, std::string, ISerialIO &);
     bool initializeLoop(const bool forceReInitialize = false);
     bool communicationLoop(StateMachineCallback_t const, const CommunicationState);
     InitializeState getInitializeState();
@@ -86,7 +105,7 @@ class BP35A1 {
         ActiveScanWithoutIE,
     } scanMode = ScanMode::ActiveScanWithIE;
 
-    const std::vector<String> skCmd = {
+    const std::vector<std::string> skCmd = {
         "SKSREG",
         "SKSREG SFE 0",
         "SKVER",
@@ -122,7 +141,7 @@ class BP35A1 {
     struct StateMachine {
         const StateType state;
         const bool read;
-        const std::function<StateType(const String &, const StateMachineCallback_t)> processor;
+        const std::function<StateType(const std::string &, const StateMachineCallback_t)> processor;
     };
 
     enum class RegisterNum : uint8_t {
@@ -140,49 +159,49 @@ class BP35A1 {
         EchoBack               = 0xFE,
         AutoLoad               = 0xFF,
     };
-    size_t settingRegister(const RegisterNum, const String &);
-    size_t execCommand(const SKCmd, const String *const = nullptr);
+    size_t settingRegister(const RegisterNum, const std::string &);
+    size_t execCommand(const SKCmd, const std::string *const = nullptr);
     void sendUdpData(const uint8_t *const, const uint16_t);
 
     template <class StateType>
     bool stateMachineLoop(const StateMachine<StateType> *const, StateType *const, const StateType, const StateMachineCallback_t);
 
-    std::vector<String> splitString(const String &str, char delimiter) {
-        std::vector<String> tokens;
-        int start = 0;
-        int end   = str.indexOf(delimiter);
-        while (end != -1) {
-            tokens.push_back(str.substring(start, end));
+    std::vector<std::string> splitString(const std::string &str, char delimiter) {
+        std::vector<std::string> tokens;
+        size_t start = 0;
+        size_t end   = str.find(delimiter);
+        while (end != std::string::npos) {
+            tokens.push_back(str.substr(start, end - start));
             start = end + 1;
-            end   = str.indexOf(delimiter, start);
+            end   = str.find(delimiter, start);
         }
-        tokens.push_back(str.substring(start));
+        tokens.push_back(str.substr(start));
         return tokens;
     }
 
     ISerialIO &serial_;
-    String eVer;
-    String WPassword;
-    String WID;
+    std::string eVer;
+    std::string WPassword;
+    std::string WID;
 
     void (*callback)(InitializeState) = nullptr; // BP35A1のステータス変更を通知するコールバック
     struct {
-        String channel;
-        String channelPage;
-        String panId;
-        String macAddress;
-        String ipv6Address;
-        String destIpv6Address;
-        String LQI;
-        String pairId;
+        std::string channel;
+        std::string channelPage;
+        std::string panId;
+        std::string macAddress;
+        std::string ipv6Address;
+        std::string destIpv6Address;
+        std::string LQI;
+        std::string pairId;
     } CommunicationParameter;
 
     struct {
-        String ipv6Address;
-        String macAddress64;
-        String channel;
-        String panId;
-        String macAddress16;
+        std::string ipv6Address;
+        std::string macAddress64;
+        std::string channel;
+        std::string panId;
+        std::string macAddress16;
     } skinfo;
 
     // lambda内のstatic変数をメンバ化：状態リセット時に初期化可能にする
@@ -198,5 +217,5 @@ class BP35A1 {
     template <class StateType>
     const StateMachine<StateType> *findStateMachine(const std::vector<StateMachine<StateType>> *const, const StateType);
     template <class StateType>
-    StateType checkSuccessUdpSend(const String &, const StateType, const StateType);
+    StateType checkSuccessUdpSend(const std::string &, const StateType, const StateType);
 };

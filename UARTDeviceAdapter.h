@@ -27,25 +27,25 @@ class UARTDeviceAdapter : public ISerialIO {
     virtual void flush() {
         uart_.flush();
     }
-    virtual size_t print(const String &data) {
+    virtual size_t print(const std::string &data) {
         uart_.write_str(data.c_str());
         return data.length();
     }
-    virtual size_t println(const String &data) {
+    virtual size_t println(const std::string &data) {
         size_t ret = print(data);
         ret += print("\r\n");
         return ret;
     }
-    virtual String readStringUntil(char terminator) {
-        String ret;
+    virtual std::string readStringUntil(char terminator) {
+        std::string ret;
         uint8_t data;
         while (uart_.available()) {
             if (uart_.peek_byte(&data) && data == terminator) {
-                uart_.read_byte(&data); // Consume the terminator
+                uart_.read_byte(&data);
                 break;
             }
             if (uart_.read_byte(&data)) {
-                ret += (char)data;
+                ret += static_cast<char>(data);
             }
         }
         return ret;

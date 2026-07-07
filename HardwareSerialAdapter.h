@@ -21,14 +21,15 @@ class HardwareSerialAdapter : public ISerialIO {
     virtual void flush() {
         serial_.flush();
     }
-    virtual size_t print(const String &data) {
-        return serial_.print(data);
+    virtual size_t print(const std::string &data) {
+        return serial_.print(data.c_str());
     }
-    virtual size_t println(const String &data) {
-        return serial_.println(data);
+    virtual size_t println(const std::string &data) {
+        return serial_.println(data.c_str());
     }
-    virtual String readStringUntil(char terminator) {
-        return serial_.readStringUntil(terminator);
+    virtual std::string readStringUntil(char terminator) {
+        String arduinoStr = serial_.readStringUntil(terminator);
+        return std::string(arduinoStr.c_str());
     }
     virtual size_t readBytes(uint8_t *buffer, size_t length) {
         return serial_.readBytes(buffer, length);

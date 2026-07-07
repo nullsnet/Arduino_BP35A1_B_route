@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <functional>
+#include <string>
 #include <vector>
 
 class Event {
@@ -74,7 +75,7 @@ class Event {
             }
         }
     }
-    String toString() {
+    std::string toString() {
         char c[52] = "EVENT";
         if (this->type != Type::Invalid) {
             snprintf(&c[5], (sizeof(c) - 5), " %02X", (uint8_t)type);
@@ -85,7 +86,7 @@ class Event {
                 }
             }
         }
-        return String(c);
+        return std::string(c);
     }
 
     CallbackResult doEvent(const std::vector<Event::Callback> *const callback) {

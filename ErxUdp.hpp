@@ -1,14 +1,14 @@
 #pragma once
 
-#include <vector>
-#include <string.h>
 #include <stdint.h>
-#include <WString.h>
+#include <string.h>
+#include <string>
+#include <vector>
 
 class ErxUdp {
   private:
-    std::vector<String> split(const char *src, const char *del) {
-        std::vector<String> result;
+    std::vector<std::string> split(const char *src, const char *del) {
+        std::vector<std::string> result;
         std::vector<char> vtxt(strlen(src) + 1, '\0');
         char *txt = &vtxt[0];
         strcpy(txt, src);
@@ -28,17 +28,17 @@ class ErxUdp {
     }
 
   public:
-    String senderIpv6;
-    String destIpv6;
+    std::string senderIpv6;
+    std::string destIpv6;
     uint16_t senderPort;
     uint16_t destPort;
-    String senderMac;
+    std::string senderMac;
     bool secured;
     uint16_t length;
-    String payload;
+    std::string payload;
     ErxUdp() {};
-    ErxUdp(String erxUdpData) {
-        std::vector<String> result = split(erxUdpData.c_str(), " ");
+    ErxUdp(std::string erxUdpData) {
+        std::vector<std::string> result = split(erxUdpData.c_str(), " ");
         if (result.size() == 9) {
             this->senderIpv6 = result[1];
             this->destIpv6   = result[2];
