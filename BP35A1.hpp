@@ -82,9 +82,9 @@ class BP35A1 {
         waitErxudp,
     } communicationState = CommunicationState::ready;
 
-    using StateMachineCallback_t = void (*)(const LowVoltageSmartElectricEnergyMeterClass);
+    using StateMachineCallback_t = std::function<void(const LowVoltageSmartElectricEnergyMeterClass)>;
 
-    void setStatusChangeCallback(void (*)(InitializeState));
+    void setStatusChangeCallback(std::function<void(InitializeState)>);
     void sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>);
     BP35A1(std::string, std::string, ISerialIO &);
     bool initializeLoop(const bool forceReInitialize = false);
@@ -184,7 +184,7 @@ class BP35A1 {
     std::string WPassword;
     std::string WID;
 
-    void (*callback)(InitializeState) = nullptr; // BP35A1のステータス変更を通知するコールバック
+    std::function<void(InitializeState)> callback; // BP35A1のステータス変更を通知するコールバック
     struct {
         std::string channel;
         std::string channelPage;

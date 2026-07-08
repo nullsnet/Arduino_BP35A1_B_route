@@ -434,8 +434,8 @@ size_t BP35A1::settingRegister(const RegisterNum registerNum, const std::string 
 BP35A1::BP35A1(std::string ID, std::string Password, ISerialIO &serial)
     : serial_(serial), WPassword(std::move(Password)), WID(std::move(ID)) {}
 
-void BP35A1::setStatusChangeCallback(void (*callback)(InitializeState)) {
-    this->callback = callback;
+void BP35A1::setStatusChangeCallback(std::function<void(InitializeState)> cb) {
+    this->callback = std::move(cb);
 }
 
 BP35A1::InitializeState BP35A1::getInitializeState() const {
