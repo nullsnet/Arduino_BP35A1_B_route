@@ -82,7 +82,13 @@ class BP35A1 {
         waitErxudp,
     } communicationState = CommunicationState::ready;
 
-    using StateMachineCallback_t = std::function<void(const LowVoltageSmartElectricEnergyMeterClass)>;
+    enum class ScanMode : uint8_t {
+        EDScan,
+        ActiveScanWithIE = 2,
+        ActiveScanWithoutIE,
+    };
+
+    using StateMachineCallback_t = std::function<void(const LowVoltageSmartElectricEnergyMeterClass &)>;
 
     void setStatusChangeCallback(std::function<void(InitializeState)>);
     void sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>);
@@ -94,16 +100,30 @@ class BP35A1 {
     void resetInitializeState();
     void resetCommunicationState();
 
+    const std::string &getLocalIpv6Address() const { return skinfo.ipv6Address; }
+    const std::string &getDestIpv6Address() const { return CommunicationParameter.destIpv6Address; }
+    const std::string &getMacAddress64() const { return skinfo.macAddress64; }
+    const std::string &getMacAddress16() const { return skinfo.macAddress16; }
+    const std::string &getChannel() const { return skinfo.channel; }
+    const std::string &getPanId() const { return skinfo.panId; }
+    const std::string &getLQI() const { return CommunicationParameter.LQI; }
+    const std::string &getPairId() const { return CommunicationParameter.pairId; }
+    ScanMode getScanMode() const { return scanMode; }
+    const char *getScanModeString() const {
+        switch (scanMode) {
+            case ScanMode::EDScan: return "ED";
+            case ScanMode::ActiveScanWithIE: return "ActiveWithIE";
+            case ScanMode::ActiveScanWithoutIE: return "ActiveWithoutIE";
+            default: return "Unknown";
+        }
+    }
+
   private:
     static constexpr const char *const TAG = "bp35a1";
     LowVoltageSmartElectricEnergyMeterClass echonet;
     const unsigned int scanChannelMask = 0xFFFFFFFF;
 
-    enum class ScanMode : uint8_t {
-        EDScan,
-        ActiveScanWithIE = 2,
-        ActiveScanWithoutIE,
-    } scanMode = ScanMode::ActiveScanWithIE;
+    ScanMode scanMode = ScanMode::ActiveScanWithIE;
 
     const std::vector<std::string> skCmd = {
         "SKSREG",
@@ -218,4 +238,8 @@ class BP35A1 {
     const StateMachine<StateType> *findStateMachine(const std::vector<StateMachine<StateType>> *const, const StateType);
     template <class StateType>
     StateType checkSuccessUdpSend(const std::string &, const StateType, const StateType);
+    void buildStateMachine();
+
+    std::vector<StateMachine<InitializeState>> init_state_machines_;
+    std::vector<StateMachine<CommunicationState>> comm_state_machines_;
 };

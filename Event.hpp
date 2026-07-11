@@ -64,7 +64,9 @@ class Event {
 
     Event(const Type initType, const char *const initSender, const size_t size, const Parameter initParameter)
         : type(initType), parameter(initParameter) {
-        Event(initType, initSender, size);
+        if (size < sizeof(sender)) {
+            memcpy(this->sender, initSender, size);
+        }
     }
 
     Event(const char *const eventChar, const size_t size) {

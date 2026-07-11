@@ -39,8 +39,32 @@ const BP35A1::StateMachine<StateType> *BP35A1::findStateMachine(const std::vecto
     return nullptr;
 }
 
-const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(const InitializeState state) {
-    static const std::vector<StateMachine<InitializeState>> stateMachines = {
+void BP35A1::buildStateMachine() {
+    comm_state_machines_ = std::vector<StateMachine<CommunicationState>>{
+        {
+            DECLARE_STATE(CommunicationState::waitSuccessUdpSend, true),
+            .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
+                return checkSuccessUdpSend(line, CommunicationState::waitErxudp, CommunicationState::waitSuccessUdpSend);
+            },
+        },
+        {
+            DECLARE_STATE(CommunicationState::waitErxudp, true),
+            .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
+                if (line.find("ERXUDP " + this->CommunicationParameter.ipv6Address) != std::string::npos) {
+                    const std::string payload = ErxUdp(line).payload;
+                    if (callback != nullptr && !payload.empty() && this->echonet.load(payload.c_str())) {
+                        callback(this->echonet);
+                    }
+                    return CommunicationState::ready;
+                } else {
+                    ESP_LOGD(TAG, "Unexpected Event... continue");
+                    return CommunicationState::waitErxudp;
+                }
+            },
+        },
+    };
+
+    init_state_machines_ = std::vector<StateMachine<InitializeState>>{
         {
             DECLARE_STATE(InitializeState::uninitialized, false),
             .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
@@ -382,7 +406,8 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             DECLARE_STATE(InitializeState::waitInitParamErxudp, true),
             .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
                 if (line.find("ERXUDP " + this->CommunicationParameter.ipv6Address) != std::string::npos) {
-                    if (this->echonet.load(ErxUdp(line).payload.c_str()) && this->echonet.initializeParameter()) {
+                    const std::string payload = ErxUdp(line).payload;
+                    if (!payload.empty() && this->echonet.load(payload.c_str()) && this->echonet.initializeParameter()) {
                         ESP_LOGI(TAG, "ConvertCumulativeEnergyUnit : %f", this->echonet.cumulativeEnergyUnit);
                         ESP_LOGI(TAG, "SyntheticTransformationRatio: %d", this->echonet.syntheticTransformationRatio);
                         return InitializeState::readySmartMeter;
@@ -396,32 +421,14 @@ const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(con
             },
         },
     };
-    return findStateMachine(&stateMachines, state);
 }
+
+const BP35A1::StateMachine<BP35A1::InitializeState> *BP35A1::getStateMachine(const InitializeState state) {
+    return findStateMachine(&init_state_machines_, state);
+}
+
 const BP35A1::StateMachine<BP35A1::CommunicationState> *BP35A1::getStateMachine(CommunicationState const state) {
-    static const std::vector<StateMachine<CommunicationState>> stateMachines = {
-        {
-            DECLARE_STATE(CommunicationState::waitSuccessUdpSend, true),
-            .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
-                return checkSuccessUdpSend(line, CommunicationState::waitErxudp, CommunicationState::waitSuccessUdpSend);
-            },
-        },
-        {
-            DECLARE_STATE(CommunicationState::waitErxudp, true),
-            .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
-                if (line.find("ERXUDP " + this->CommunicationParameter.ipv6Address) != std::string::npos) {
-                    if (callback != nullptr && this->echonet.load(ErxUdp(line).payload.c_str())) {
-                        callback(this->echonet);
-                    }
-                    return CommunicationState::ready;
-                } else {
-                    ESP_LOGD(TAG, "Unexpected Event... continue");
-                    return CommunicationState::waitErxudp;
-                }
-            },
-        },
-    };
-    return findStateMachine(&stateMachines, state);
+    return findStateMachine(&comm_state_machines_, state);
 }
 
 size_t BP35A1::settingRegister(const RegisterNum registerNum, const std::string &arg) {
@@ -432,7 +439,9 @@ size_t BP35A1::settingRegister(const RegisterNum registerNum, const std::string 
 }
 
 BP35A1::BP35A1(std::string ID, std::string Password, ISerialIO &serial)
-    : serial_(serial), WPassword(std::move(Password)), WID(std::move(ID)) {}
+    : serial_(serial), WPassword(std::move(Password)), WID(std::move(ID)) {
+    buildStateMachine();
+}
 
 void BP35A1::setStatusChangeCallback(std::function<void(InitializeState)> cb) {
     this->callback = std::move(cb);
@@ -488,18 +497,32 @@ bool BP35A1::stateMachineLoop(const StateMachine<StateType> *const stateMachine,
 }
 
 bool BP35A1::initializeLoop(const bool forceReInitialize) {
+    const InitializeState previousState = this->initializeState;
     if (forceReInitialize) {
         this->initializeState = InitializeState::uninitialized;
     }
-    const bool result = stateMachineLoop(getStateMachine(this->initializeState), &this->initializeState, InitializeState::readySmartMeter, nullptr);
-    if (this->callback != nullptr) {
+    const auto *sm = getStateMachine(this->initializeState);
+    if (!sm) {
+        ESP_LOGE(TAG, "initializeLoop: state machine is null for state=%d!", (int)this->initializeState);
+        return false;
+    }
+    const bool result = stateMachineLoop(sm, &this->initializeState, InitializeState::readySmartMeter, nullptr);
+    if (this->callback != nullptr && this->initializeState != previousState) {
         this->callback(this->initializeState);
     }
     return result;
 }
 
 bool BP35A1::communicationLoop(const StateMachineCallback_t callback, const CommunicationState expectedState) {
-    return stateMachineLoop(getStateMachine(this->communicationState), &this->communicationState, expectedState, callback);
+    if (this->communicationState == expectedState) {
+        return true;
+    }
+    const auto *sm = getStateMachine(this->communicationState);
+    if (!sm) {
+        ESP_LOGE(TAG, "communicationLoop: state machine is null for state=%d!", (int)this->communicationState);
+        return false;
+    }
+    return stateMachineLoop(sm, &this->communicationState, expectedState, callback);
 }
 
 void BP35A1::sendUdpData(const uint8_t *const data, const uint16_t length) {
