@@ -14,6 +14,7 @@
 #else
   #ifndef ESP_LOGI
     #define ESP_LOGI(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
+    #define ESP_LOGW(tag, fmt, ...) std::fprintf(stderr, "[%s] " fmt "\n", (tag), ##__VA_ARGS__)
     #define ESP_LOGD(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
     #define ESP_LOGE(tag, fmt, ...) std::fprintf(stderr, "[%s] " fmt "\n", (tag), ##__VA_ARGS__)
   #endif
@@ -112,6 +113,7 @@ class BP35A1 {
     const std::string &getLQI() const { return CommunicationParameter.LQI; }
     const std::string &getPairId() const { return CommunicationParameter.pairId; }
     ScanMode getScanMode() const { return scanMode; }
+    uint32_t getPanaFailCount() const { return pana_fail_count_; }
     const char *getScanModeString() const {
         switch (scanMode) {
             case ScanMode::EDScan: return "ED";
@@ -232,6 +234,7 @@ class BP35A1 {
     bool udpSendReceivedComplete = false;
     bool disableEchoReceivedOk = false;
     bool disableEchoReceivedEcho = false;
+    uint32_t pana_fail_count_ = 0;
     uint32_t scanDuration = 3;
     bool scanReceivedBeacon = false;
     bool scanReceivedEpanDesc = false;

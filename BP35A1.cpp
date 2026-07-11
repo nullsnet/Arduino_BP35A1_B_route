@@ -377,7 +377,8 @@ void BP35A1::buildStateMachine() {
                         ESP_LOGD(TAG, "Success PANA");
                         return InitializeState::readyCommunication;
                     case Event::Type::FailedPANA:
-                        ESP_LOGD(TAG, "Failed PANA... retry");
+                        pana_fail_count_++;
+                        ESP_LOGW(TAG, "PANA authentication failed (%u times) - check B-route ID and password", pana_fail_count_);
                         return InitializeState::convertAddr;
                     default:
                         ESP_LOGD(TAG, "Unexpected Event... continue");
