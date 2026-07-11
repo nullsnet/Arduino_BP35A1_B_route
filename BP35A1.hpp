@@ -104,6 +104,7 @@ class BP35A1 {
 
     const std::string &getLocalIpv6Address() const { return skinfo.ipv6Address; }
     const std::string &getDestIpv6Address() const { return CommunicationParameter.destIpv6Address; }
+    const std::string &getCommunicationIpv6Address() const { return CommunicationParameter.ipv6Address; }
     const std::string &getMacAddress64() const { return skinfo.macAddress64; }
     const std::string &getMacAddress16() const { return skinfo.macAddress16; }
     const std::string &getChannel() const { return CommunicationParameter.channel; }
