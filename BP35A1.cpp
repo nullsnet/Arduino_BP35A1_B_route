@@ -410,13 +410,37 @@ void BP35A1::buildStateMachine() {
                     if (!payload.empty() && this->echonet.load(payload.c_str()) && this->echonet.initializeParameter()) {
                         ESP_LOGI(TAG, "ConvertCumulativeEnergyUnit : %f", this->echonet.cumulativeEnergyUnit);
                         ESP_LOGI(TAG, "SyntheticTransformationRatio: %d", this->echonet.syntheticTransformationRatio);
-                        return InitializeState::readySmartMeter;
+                        return InitializeState::requerySKInfo;
                     } else {
                         return InitializeState::readyCommunication;
                     }
                 } else {
                     ESP_LOGD(TAG, "Unexpected Event... continue");
                     return InitializeState::waitInitParamErxudp;
+                }
+            },
+        },
+        {
+            DECLARE_STATE(InitializeState::requerySKInfo, false),
+            .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
+                return this->execCommand(SKCmd::getSkInfo) > 0 ? InitializeState::waitRequeryEinfo : InitializeState::requerySKInfo;
+            },
+        },
+        {
+            DECLARE_STATE(InitializeState::waitRequeryEinfo, true),
+            .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
+                const std::vector<std::string> tokens = splitString(line, ' ');
+                if (tokens.size() == 6 && tokens[0] == "EINFO") {
+                    this->skinfo.ipv6Address  = tokens[1];
+                    this->skinfo.macAddress64 = tokens[2];
+                    this->skinfo.channel      = tokens[3];
+                    this->skinfo.panId        = tokens[4];
+                    this->skinfo.macAddress16 = tokens[5];
+                    ESP_LOGI(TAG, "Re-queried SKINFO - ipv6: %s, mac16: %s", this->skinfo.ipv6Address.c_str(), this->skinfo.macAddress16.c_str());
+                    return InitializeState::readySmartMeter;
+                } else {
+                    ESP_LOGD(TAG, "Unexpected EINFO response, continue");
+                    return InitializeState::waitRequeryEinfo;
                 }
             },
         },

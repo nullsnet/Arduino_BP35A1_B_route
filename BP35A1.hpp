@@ -73,6 +73,8 @@ class BP35A1 {
         readyCommunication,
         waitInitParamSuccessUdpSend,
         waitInitParamErxudp,
+        requerySKInfo,
+        waitRequeryEinfo,
         readySmartMeter,
     } initializeState = InitializeState::uninitialized;
 
@@ -104,8 +106,8 @@ class BP35A1 {
     const std::string &getDestIpv6Address() const { return CommunicationParameter.destIpv6Address; }
     const std::string &getMacAddress64() const { return skinfo.macAddress64; }
     const std::string &getMacAddress16() const { return skinfo.macAddress16; }
-    const std::string &getChannel() const { return skinfo.channel; }
-    const std::string &getPanId() const { return skinfo.panId; }
+    const std::string &getChannel() const { return CommunicationParameter.channel; }
+    const std::string &getPanId() const { return CommunicationParameter.panId; }
     const std::string &getLQI() const { return CommunicationParameter.LQI; }
     const std::string &getPairId() const { return CommunicationParameter.pairId; }
     ScanMode getScanMode() const { return scanMode; }
