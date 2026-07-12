@@ -108,9 +108,9 @@ class BP35A1 {
     const std::string &getCommunicationIpv6Address() const { return CommunicationParameter.ipv6Address; }
     const std::string &getMacAddress64() const { return skinfo.macAddress64; }
     const std::string &getMacAddress16() const { return skinfo.macAddress16; }
-    const std::string &getChannel() const { return CommunicationParameter.channel; }
+    uint8_t getChannel() const { return CommunicationParameter.channel; }
     const std::string &getPanId() const { return CommunicationParameter.panId; }
-    const std::string &getLQI() const { return CommunicationParameter.LQI; }
+    int8_t getLQI() const { return CommunicationParameter.LQI; }
     const std::string &getPairId() const { return CommunicationParameter.pairId; }
     ScanMode getScanMode() const { return scanMode; }
     uint32_t getPanaFailCount() const { return pana_fail_count_; }
@@ -211,13 +211,13 @@ class BP35A1 {
 
     std::function<void(InitializeState)> callback; // BP35A1のステータス変更を通知するコールバック
     struct {
-        std::string channel;
+        uint8_t channel;
         std::string channelPage;
         std::string panId;
         std::string macAddress;
         std::string ipv6Address;
         std::string destIpv6Address;
-        std::string LQI;
+        int8_t LQI;
         std::string pairId;
     } CommunicationParameter;
 
