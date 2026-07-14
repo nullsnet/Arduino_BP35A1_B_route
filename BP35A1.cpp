@@ -255,8 +255,8 @@ void BP35A1::buildStateMachine() {
             .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
                 const std::vector<std::string> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].find("Channel") != std::string::npos) {
-                    this->CommunicationParameter.channel = std::stoi(trim(tokens[1]));
-                    ESP_LOGI(TAG, "Channel : %u", this->CommunicationParameter.channel);
+                    this->CommunicationParameter.channel = trim(tokens[1]);
+                    ESP_LOGI(TAG, "Channel : %s", this->CommunicationParameter.channel.c_str());
                     return InitializeState::waitEpanDescChannelPage;
                 } else {
                     return InitializeState::activeScanWithIE;
@@ -307,8 +307,8 @@ void BP35A1::buildStateMachine() {
             .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
                 const std::vector<std::string> tokens = splitString(line, ':');
                 if (tokens.size() == 2 && tokens[0].find("LQI") != std::string::npos) {
-                    this->CommunicationParameter.LQI = std::stoi(trim(tokens[1]));
-                    ESP_LOGI(TAG, "LQI : %d", this->CommunicationParameter.LQI);
+                    this->CommunicationParameter.LQI = trim(tokens[1]);
+                    ESP_LOGI(TAG, "LQI : %s", this->CommunicationParameter.LQI.c_str());
                     return InitializeState::waitEpanDescPairId;
                 } else {
                     return InitializeState::activeScanWithIE;
@@ -349,7 +349,7 @@ void BP35A1::buildStateMachine() {
         {
             DECLARE_STATE(InitializeState::setChannel, false),
             .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
-                return this->settingRegister(RegisterNum::ChannelNumber, std::to_string(this->CommunicationParameter.channel)) > 0 ? InitializeState::waitSetChannel : InitializeState::activeScanWithIE;
+                return this->settingRegister(RegisterNum::ChannelNumber, this->CommunicationParameter.channel) > 0 ? InitializeState::waitSetChannel : InitializeState::activeScanWithIE;
             },
         },
         {DECLARE_STATE(InitializeState::waitSetChannel, true), .processor = EXPEXT_OK(InitializeState::setPanId, InitializeState::activeScanWithIE)},
