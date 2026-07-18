@@ -116,6 +116,7 @@ class BP35A1 {
     const std::string &getPairId() const { return CommunicationParameter.pairId; }
     ScanMode getScanMode() const { return scanMode; }
     uint32_t getPanaFailCount() const { return pana_fail_count_; }
+    void setScanChannelMask(unsigned int mask) { this->scanChannelMask = mask; }
     const char *getScanModeString() const {
         switch (scanMode) {
             case ScanMode::EDScan: return "ED";
@@ -128,7 +129,7 @@ class BP35A1 {
   private:
     static constexpr const char *const TAG = "bp35a1";
     LowVoltageSmartElectricEnergyMeterClass echonet;
-    const unsigned int scanChannelMask = 0xFFFFFFFF;
+    unsigned int scanChannelMask = 0xFFFFFFFF;
 
     ScanMode scanMode = ScanMode::ActiveScanWithIE;
 
