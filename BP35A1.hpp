@@ -109,8 +109,10 @@ class BP35A1 {
     const std::string &getMacAddress64() const { return skinfo.macAddress64; }
     const std::string &getMacAddress16() const { return skinfo.macAddress16; }
     const std::string &getChannel() const { return CommunicationParameter.channel; }
+    uint8_t getChannelNumeric() const { return static_cast<uint8_t>(std::stoul(this->CommunicationParameter.channel, nullptr, 10)); }
     const std::string &getPanId() const { return CommunicationParameter.panId; }
     const std::string &getLQI() const { return CommunicationParameter.LQI; }
+    uint8_t getLQINumeric() const { return static_cast<uint8_t>(std::stoul(this->CommunicationParameter.LQI, nullptr, 16)); }
     const std::string &getPairId() const { return CommunicationParameter.pairId; }
     ScanMode getScanMode() const { return scanMode; }
     uint32_t getPanaFailCount() const { return pana_fail_count_; }
