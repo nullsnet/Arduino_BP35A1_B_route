@@ -409,8 +409,8 @@ void BP35A1::buildStateMachine() {
                 if (line.find("ERXUDP " + this->CommunicationParameter.ipv6Address) != std::string::npos) {
                     const std::string payload = ErxUdp(line).payload;
                     if (!payload.empty() && this->echonet.load(payload.c_str()) && this->echonet.initializeParameter()) {
-                        ESP_LOGI(TAG, "ConvertCumulativeEnergyUnit : %f", this->echonet.cumulativeEnergyUnit);
-                        ESP_LOGI(TAG, "SyntheticTransformationRatio: %d", this->echonet.syntheticTransformationRatio);
+                        ESP_LOGI(TAG, "ConvertCumulativeEnergyUnit : %f", this->echonet.getCumulativeEnergyUnit());
+                        ESP_LOGI(TAG, "SyntheticTransformationRatio: %d", this->echonet.getSyntheticTransformationRatio());
                         return InitializeState::requerySKInfo;
                     } else {
                         return InitializeState::readyCommunication;
@@ -567,6 +567,12 @@ void BP35A1::sendUdpData(const uint8_t *const data, const uint16_t length) {
 }
 
 void BP35A1::sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property> properties) {
+    this->echonet.generateGetRequest(properties);
+    this->sendUdpData(this->echonet.getRawData().data(), this->echonet.size());
+    this->communicationState = CommunicationState::waitSuccessUdpSend;
+}
+
+void BP35A1::sendPropertyRequest(const std::vector<EchonetLite::Property> properties) {
     this->echonet.generateGetRequest(properties);
     this->sendUdpData(this->echonet.getRawData().data(), this->echonet.size());
     this->communicationState = CommunicationState::waitSuccessUdpSend;

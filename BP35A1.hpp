@@ -95,6 +95,7 @@ class BP35A1 {
 
     void setStatusChangeCallback(std::function<void(InitializeState)>);
     void sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>);
+    void sendPropertyRequest(const std::vector<EchonetLite::Property>);
     BP35A1(std::string, std::string, ISerialIO &);
     bool initializeLoop(const bool forceReInitialize = false);
     bool communicationLoop(StateMachineCallback_t const, const CommunicationState);
