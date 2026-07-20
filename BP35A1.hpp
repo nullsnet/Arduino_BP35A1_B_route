@@ -10,19 +10,21 @@
 #include <vector>
 
 #ifdef USE_ESP_LOG
-  #include "esp32-hal-log.h"
+#include "esp32-hal-log.h"
 #else
-  #ifndef ESP_LOGI
-    #define ESP_LOGI(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
-    #define ESP_LOGW(tag, fmt, ...) std::fprintf(stderr, "[%s] " fmt "\n", (tag), ##__VA_ARGS__)
-    #define ESP_LOGD(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
-    #define ESP_LOGE(tag, fmt, ...) std::fprintf(stderr, "[%s] " fmt "\n", (tag), ##__VA_ARGS__)
-  #endif
+#ifndef ESP_LOGI
+#define ESP_LOGI(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
+#define ESP_LOGW(tag, fmt, ...) std::fprintf(stderr, "[%s] " fmt "\n", (tag), ##__VA_ARGS__)
+#define ESP_LOGD(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
+#define ESP_LOGE(tag, fmt, ...) std::fprintf(stderr, "[%s] " fmt "\n", (tag), ##__VA_ARGS__)
+#endif
 #endif
 
 inline std::string trim(const std::string &s) {
     auto start = s.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) return "";
+    if (start == std::string::npos) {
+        return "";
+    }
     auto end = s.find_last_not_of(" \t\r\n");
     return s.substr(start, end - start + 1);
 }
@@ -94,8 +96,17 @@ class BP35A1 {
     using StateMachineCallback_t = std::function<void(const LowVoltageSmartElectricEnergyMeterClass &)>;
 
     void setStatusChangeCallback(std::function<void(InitializeState)>);
-    void sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property>);
-    void sendPropertyRequest(const std::vector<EchonetLite::Property>);
+    template <class PropertyType>
+    std::enable_if_t<std::is_enum_v<PropertyType> && std::is_same_v<std::underlying_type_t<PropertyType>, uint8_t>>
+    sendPropertyRequest(const std::vector<PropertyType> properties) {
+        std::vector<uint8_t> codes;
+        codes.reserve(properties.size());
+        for (const auto &p : properties) {
+            codes.push_back(static_cast<uint8_t>(p));
+        }
+        this->sendPropertyRequest(codes);
+    }
+    void sendPropertyRequest(const std::vector<uint8_t> &epc_codes);
     BP35A1(std::string, std::string, ISerialIO &);
     bool initializeLoop(const bool forceReInitialize = false);
     bool communicationLoop(StateMachineCallback_t const, const CommunicationState);
@@ -104,26 +115,58 @@ class BP35A1 {
     void resetInitializeState();
     void resetCommunicationState();
 
-    const std::string &getLocalIpv6Address() const { return skinfo.ipv6Address; }
-    const std::string &getDestIpv6Address() const { return CommunicationParameter.destIpv6Address; }
-    const std::string &getCommunicationIpv6Address() const { return CommunicationParameter.ipv6Address; }
-    const std::string &getMacAddress64() const { return skinfo.macAddress64; }
-    const std::string &getMacAddress16() const { return skinfo.macAddress16; }
-    const std::string &getChannel() const { return CommunicationParameter.channel; }
-    uint8_t getChannelNumeric() const { return static_cast<uint8_t>(std::stoul(this->CommunicationParameter.channel, nullptr, 10)); }
-    const std::string &getPanId() const { return CommunicationParameter.panId; }
-    const std::string &getLQI() const { return CommunicationParameter.LQI; }
-    uint8_t getLQINumeric() const { return static_cast<uint8_t>(std::stoul(this->CommunicationParameter.LQI, nullptr, 16)); }
-    const std::string &getPairId() const { return CommunicationParameter.pairId; }
-    ScanMode getScanMode() const { return scanMode; }
-    uint32_t getPanaFailCount() const { return pana_fail_count_; }
-    void setScanChannelMask(unsigned int mask) { this->scanChannelMask = mask; }
+    const std::string &getLocalIpv6Address() const {
+        return skinfo.ipv6Address;
+    }
+    const std::string &getDestIpv6Address() const {
+        return CommunicationParameter.destIpv6Address;
+    }
+    const std::string &getCommunicationIpv6Address() const {
+        return CommunicationParameter.ipv6Address;
+    }
+    const std::string &getMacAddress64() const {
+        return skinfo.macAddress64;
+    }
+    const std::string &getMacAddress16() const {
+        return skinfo.macAddress16;
+    }
+    const std::string &getChannel() const {
+        return CommunicationParameter.channel;
+    }
+    uint8_t getChannelNumeric() const {
+        return static_cast<uint8_t>(std::stoul(this->CommunicationParameter.channel, nullptr, 10));
+    }
+    const std::string &getPanId() const {
+        return CommunicationParameter.panId;
+    }
+    const std::string &getLQI() const {
+        return CommunicationParameter.LQI;
+    }
+    uint8_t getLQINumeric() const {
+        return static_cast<uint8_t>(std::stoul(this->CommunicationParameter.LQI, nullptr, 16));
+    }
+    const std::string &getPairId() const {
+        return CommunicationParameter.pairId;
+    }
+    ScanMode getScanMode() const {
+        return scanMode;
+    }
+    uint32_t getPanaFailCount() const {
+        return pana_fail_count_;
+    }
+    void setScanChannelMask(unsigned int mask) {
+        this->scanChannelMask = mask;
+    }
     const char *getScanModeString() const {
         switch (scanMode) {
-            case ScanMode::EDScan: return "ED";
-            case ScanMode::ActiveScanWithIE: return "ActiveWithIE";
-            case ScanMode::ActiveScanWithoutIE: return "ActiveWithoutIE";
-            default: return "Unknown";
+            case ScanMode::EDScan:
+                return "ED";
+            case ScanMode::ActiveScanWithIE:
+                return "ActiveWithIE";
+            case ScanMode::ActiveScanWithoutIE:
+                return "ActiveWithoutIE";
+            default:
+                return "Unknown";
         }
     }
 
@@ -234,14 +277,14 @@ class BP35A1 {
     } skinfo;
 
     // lambda内のstatic変数をメンバ化：状態リセット時に初期化可能にする
-    bool udpSendReceivedOk = false;
+    bool udpSendReceivedOk       = false;
     bool udpSendReceivedComplete = false;
-    bool disableEchoReceivedOk = false;
+    bool disableEchoReceivedOk   = false;
     bool disableEchoReceivedEcho = false;
-    uint32_t pana_fail_count_ = 0;
-    uint32_t scanDuration = 3;
-    bool scanReceivedBeacon = false;
-    bool scanReceivedEpanDesc = false;
+    uint32_t pana_fail_count_    = 0;
+    uint32_t scanDuration        = 3;
+    bool scanReceivedBeacon      = false;
+    bool scanReceivedEpanDesc    = false;
     const StateMachine<InitializeState> *getStateMachine(const InitializeState);
     const StateMachine<CommunicationState> *getStateMachine(const CommunicationState);
     template <class StateType>

@@ -54,6 +54,8 @@ void BP35A1::buildStateMachine() {
                     const std::string payload = ErxUdp(line).payload;
                     if (callback != nullptr && !payload.empty() && this->echonet.load(payload.c_str())) {
                         callback(this->echonet);
+                    } else {
+                        ESP_LOGD(TAG, "load() failed or empty payload for ERXUDP response");
                     }
                     return CommunicationState::ready;
                 } else {
@@ -481,14 +483,14 @@ BP35A1::CommunicationState BP35A1::getCommunicationState() const {
 }
 
 void BP35A1::resetInitializeState() {
-    this->initializeState = InitializeState::uninitialized;
-    udpSendReceivedOk = false;
+    this->initializeState   = InitializeState::uninitialized;
+    udpSendReceivedOk       = false;
     udpSendReceivedComplete = false;
-    disableEchoReceivedOk = false;
+    disableEchoReceivedOk   = false;
     disableEchoReceivedEcho = false;
-    scanDuration = 3;
-    scanReceivedBeacon = false;
-    scanReceivedEpanDesc = false;
+    scanDuration            = 3;
+    scanReceivedBeacon      = false;
+    scanReceivedEpanDesc    = false;
 }
 
 void BP35A1::resetCommunicationState() {
@@ -508,7 +510,7 @@ bool BP35A1::stateMachineLoop(const StateMachine<StateType> *const stateMachine,
     if (stateMachine != nullptr && recordedState != nullptr && stateMachine->state == *recordedState) {
         if (stateMachine->read == false || (stateMachine->read == true && this->serial_.available())) {
             std::string rxBuffer = this->serial_.readStringUntil('\n');
-            rxBuffer = trim(rxBuffer);
+            rxBuffer             = trim(rxBuffer);
             if (stateMachine->read == true && rxBuffer.length() == 0) {
                 return *recordedState == expectedState;
             }
@@ -558,22 +560,21 @@ void BP35A1::sendUdpData(const uint8_t *const data, const uint16_t length) {
     this->serial_.flush();
 
     constexpr size_t LOG_BUF_SIZE = 128;
-    char logBuffer[LOG_BUF_SIZE] = {'\0'};
-    size_t maxBytes = std::min(static_cast<size_t>(length), (LOG_BUF_SIZE - 1) / 2);
+    char logBuffer[LOG_BUF_SIZE]  = {'\0'};
+    size_t maxBytes               = std::min(static_cast<size_t>(length), (LOG_BUF_SIZE - 1) / 2);
     for (size_t i = 0; i < maxBytes; i++) {
         snprintf(&logBuffer[i * 2], LOG_BUF_SIZE - (i * 2) - 2, "%02X", data[i]);
     }
     ESP_LOGD(TAG, ">> %s%s", udpData.getSendString().c_str(), logBuffer);
 }
 
-void BP35A1::sendPropertyRequest(const std::vector<LowVoltageSmartElectricEnergyMeterClass::Property> properties) {
-    this->echonet.generateGetRequest(properties);
-    this->sendUdpData(this->echonet.getRawData().data(), this->echonet.size());
-    this->communicationState = CommunicationState::waitSuccessUdpSend;
-}
-
-void BP35A1::sendPropertyRequest(const std::vector<EchonetLite::Property> properties) {
-    this->echonet.generateGetRequest(properties);
+void BP35A1::sendPropertyRequest(const std::vector<uint8_t> &epc_codes) {
+    std::vector<EchonetLite::Property> props;
+    props.reserve(epc_codes.size());
+    for (uint8_t code : epc_codes) {
+        props.push_back(static_cast<EchonetLite::Property>(code));
+    }
+    this->echonet.generateGetRequest(props);
     this->sendUdpData(this->echonet.getRawData().data(), this->echonet.size());
     this->communicationState = CommunicationState::waitSuccessUdpSend;
 }
