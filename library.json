@@ -1,0 +1,29 @@
+{
+  "name": "Arduino_BP35A1_B_route",
+  "version": "1.0.0",
+  "description": "BP35A1 B route communicator with the smart meter for Arduino",
+  "keywords": "BP35A1, Wi-SUN, smart meter, B-route",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nullsnet/Arduino_BP35A1_B_route"
+  },
+  "authors": [
+    {
+      "name": "nullsnet",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "frameworks": "arduino",
+  "platforms": "*",
+  "dependencies": [
+    {
+      "name": "Arduino_EchonetLite",
+      "owner": "nullsnet"
+    }
+  ],
+  "build": {
+    "srcDir": ".",
+    "includeDir": "."
+  }
+}
