@@ -19,7 +19,8 @@
   "dependencies": [
     {
       "name": "Arduino_EchonetLite",
-      "owner": "nullsnet"
+      "owner": "nullsnet",
+      "version": "*"
     }
   ],
   "build": {
