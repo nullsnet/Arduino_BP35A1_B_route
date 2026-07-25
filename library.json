@@ -18,8 +18,7 @@
   "platforms": "*",
   "dependencies": [
     {
-      "name": "Arduino_EchonetLite",
-      "owner": "nullsnet",
+      "name": "Arduino_EchonetLite=https://github.com/nullsnet/Arduino_EchonetLite.git",
       "version": "*"
     }
   ],
