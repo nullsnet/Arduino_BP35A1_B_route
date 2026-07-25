@@ -207,7 +207,7 @@ void BP35A1::buildStateMachine() {
             DECLARE_STATE(InitializeState::activeScanWithIE, false),
             .processor = [this](const std::string &line, const StateMachineCallback_t callback) {
                 char s[16];
-                snprintf(s, sizeof(s), "%d %08X %X", (uint8_t)this->scanMode, this->scanChannelMask, scanDuration);
+                snprintf(s, sizeof(s), "%d %08lX %lX", (uint8_t)this->scanMode, this->scanChannelMask, scanDuration);
                 const std::string arg = std::string(s);
                 this->execCommand(SKCmd::scanSKStack, &arg);
                 scanDuration = scanDuration < 14 ? scanDuration + 1 : scanDuration;
