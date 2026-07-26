@@ -9,17 +9,6 @@
 #include <string>
 #include <vector>
 
-#ifdef USE_ESP_LOG
-#include "esp32-hal-log.h"
-#else
-#ifndef ESP_LOGI
-#define ESP_LOGI(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
-#define ESP_LOGW(tag, fmt, ...) std::fprintf(stderr, "[%s] " fmt "\n", (tag), ##__VA_ARGS__)
-#define ESP_LOGD(tag, fmt, ...) std::printf("[%s] " fmt "\n", (tag), ##__VA_ARGS__)
-#define ESP_LOGE(tag, fmt, ...) std::fprintf(stderr, "[%s] " fmt "\n", (tag), ##__VA_ARGS__)
-#endif
-#endif
-
 inline std::string trim(const std::string &s) {
     auto start = s.find_first_not_of(" \t\r\n");
     if (start == std::string::npos) {
