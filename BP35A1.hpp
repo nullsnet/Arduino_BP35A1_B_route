@@ -8,6 +8,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <esp_log.h>
 
 inline std::string trim(const std::string &s) {
     auto start = s.find_first_not_of(" \t\r\n");
